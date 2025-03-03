@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                系统状态
+            </div>
+            <div class="card-body">
+                <div id="system-stats">加载中...</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                任务状态分布
+            </div>
+            <div class="card-body">
+                <div id="task-status-chart"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mb-4">
+    <div class="card-header">
+        工作节点负载
+    </div>
+    <div class="card-body">
+        <div id="worker-load-chart"></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        最近任务
+    </div>
+    <div class="card-body">
+        <div id="recent-tasks">加载中...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    // 加载系统概览
+    function loadOverview() {
+        $.getJSON('/api/overview', function(data) {
+            let html = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>任务总数:</strong> ${data.tasks_count}</p>
+                        <p><strong>活动任务:</strong> ${data.active_tasks}</p>
+                        <p><strong>完成任务:</strong> ${data.completed_tasks}</p>
+                        <p><strong>失败任务:</strong> ${data.failed_tasks}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>工作节点数:</strong> ${data.workers_count}</p>
+                        <p><strong>平均执行时间:</strong> ${data.avg_execution_time.toFixed(2)}秒</p>
+                        <p><strong>系统运行时间:</strong> ${(data.uptime / 3600).toFixed(2)}小时</p>
+                    </div>
+                </div>
+            `;
+            $('#system-stats').html(html);
+            
+            // 渲染最近任务
+            let recentTasksHtml = '<div class="table-responsive"><table class="table table-striped">';
+            recentTasksHtml += '<thead><tr><th>任务ID</th><th>类型</th><th>状态</th><th>开始时间</th></tr></thead><tbody>';
+            
+            data.recent_tasks.forEach(function(task) {
+                const status = task.status === 'completed' ? 
+                    (task.success ? '<span class="text-success">成功</span>' : '<span class="text-danger">失败</span>') :
+                    task.status;
+                    
+                recentTasksHtml += `
+                    <tr>
+                        <td><a href="/tasks/${task.id}">${task.id}</a></td>
+                        <td>${task.type || '未知'}</td>
+                        <td>${status}</td>
+                        <td>${new Date(task.start_time * 1000).toLocaleString()}</td>
+                    </tr>
+                `;
+            });
+            
+            recentTasksHtml += '</tbody></table></div>';
+            $('#recent-tasks').html(recentTasksHtml);
+        });
+    }
+    
+    // 加载任务状态图表
+    function loadTaskStatusChart() {
+        $.getJSON('/api/chart/task_status', function(data) {
+            var graphData = JSON.parse(data);
+            Plotly.newPlot('task-status-chart', graphData.data, graphData.layout);
+        });
+    }
+    
+    // 加载工作节点负载图表
+    function loadWorkerLoadChart() {
+        $.getJSON('/api/chart/worker_load', function(data) {
+            if (data.error) {
+                $('#worker-load-chart').html('<p class="text-center text-muted">'+data.error+'</p>');
+                return;
+            }
+            var graphData = JSON.parse(data);
+            Plotly.newPlot('worker-load-chart', graphData.data, graphData.layout);
+        });
+    }
+    
+    // 初始加载
+    loadOverview();
+    loadTaskStatusChart();
+    loadWorkerLoadChart();
+    
+    // 定时刷新
+    setInterval(loadOverview, 10000);
+    setInterval(loadTaskStatusChart, 30000);
+    setInterval(loadWorkerLoadChart, 15000);
+});
+</script>
+{% endblock %}

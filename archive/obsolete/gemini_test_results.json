@@ -1,0 +1,36 @@
+{
+  "timestamp": "2025-02-26 15:00:34",
+  "model": "gemini-2.0-flash",
+  "test_cases": [
+    {
+      "input": "是否继续? [y/n]",
+      "output_type": "confirm",
+      "decision": "y",
+      "time": 1.18
+    },
+    {
+      "input": "按Enter继续",
+      "output_type": "continue",
+      "decision": "",
+      "time": 1.11
+    },
+    {
+      "input": "出现错误，是否重试?",
+      "output_type": "error",
+      "decision": "y",
+      "time": 1.12
+    },
+    {
+      "input": "请提供文件路径",
+      "output_type": "prompt",
+      "decision": "/path/to/file.txt",
+      "time": 1.23
+    },
+    {
+      "input": "请输入您想要了解的Python主题",
+      "output_type": "prompt",
+      "decision": "Python装饰器",
+      "time": 1.06
+    }
+  ]
+}

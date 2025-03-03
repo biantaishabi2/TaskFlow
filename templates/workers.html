@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card mb-4">
+    <div class="card-header">
+        工作节点负载
+    </div>
+    <div class="card-body">
+        <div id="worker-load-chart"></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        工作节点列表
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>节点ID</th>
+                        <th>类型</th>
+                        <th>状态</th>
+                        <th>活动任务数</th>
+                        <th>队列任务数</th>
+                        <th>CPU使用率</th>
+                        <th>内存使用</th>
+                        <th>已完成任务</th>
+                    </tr>
+                </thead>
+                <tbody id="workers-list">
+                    <tr><td colspan="8" class="text-center">加载中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    // 加载工作节点列表
+    function loadWorkers() {
+        $.getJSON('/api/workers', function(workers) {
+            let html = '';
+            
+            if (workers.length === 0) {
+                html = '<tr><td colspan="8" class="text-center">没有工作节点数据</td></tr>';
+            } else {
+                workers.forEach(function(worker) {
+                    const stats = worker.stats || {};
+                    
+                    html += `
+                        <tr>
+                            <td>${worker.node_id}</td>
+                            <td>${worker.type || '未知'}</td>
+                            <td>${worker.status || '未知'}</td>
+                            <td>${worker.active_tasks || 0}</td>
+                            <td>${worker.queued_tasks || 0}</td>
+                            <td>${stats.cpu_usage ? stats.cpu_usage.toFixed(2) + '%' : '-'}</td>
+                            <td>${stats.memory_usage ? stats.memory_usage.toFixed(2) + ' MB' : '-'}</td>
+                            <td>${stats.tasks_completed || 0}</td>
+                        </tr>
+                    `;
+                });
+            }
+            
+            $('#workers-list').html(html);
+        });
+    }
+    
+    // 加载工作节点负载图表
+    function loadWorkerLoadChart() {
+        $.getJSON('/api/chart/worker_load', function(data) {
+            if (data.error) {
+                $('#worker-load-chart').html('<p class="text-center text-muted">'+data.error+'</p>');
+                return;
+            }
+            var graphData = JSON.parse(data);
+            Plotly.newPlot('worker-load-chart', graphData.data, graphData.layout);
+        });
+    }
+    
+    // 初始加载
+    loadWorkers();
+    loadWorkerLoadChart();
+    
+    // 定时刷新
+    setInterval(loadWorkers, 5000);
+    setInterval(loadWorkerLoadChart, 15000);
+});
+</script>
+{% endblock %}

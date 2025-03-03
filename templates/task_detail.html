@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card mb-4">
+    <div class="card-header">
+        任务信息
+    </div>
+    <div class="card-body">
+        <div id="task-info">加载中...</div>
+    </div>
+</div>
+
+<div class="card mb-4" id="subtasks-card" style="display:none;">
+    <div class="card-header">
+        子任务列表
+    </div>
+    <div class="card-body">
+        <div id="subtasks-list"></div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        任务结果
+    </div>
+    <div class="card-body">
+        <div id="task-result">加载中...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    const taskId = "{{ task_id }}";
+    
+    // 加载任务详情
+    function loadTaskDetail() {
+        $.getJSON(`/api/tasks/${taskId}`, function(task) {
+            if (task.error) {
+                $('#task-info').html(`<div class="alert alert-danger">${task.error}</div>`);
+                return;
+            }
+            
+            const status = task.status === 'completed' ? 
+                (task.success ? '<span class="text-success">成功</span>' : '<span class="text-danger">失败</span>') :
+                task.status;
+                
+            const startTime = task.start_time ? new Date(task.start_time * 1000).toLocaleString() : '-';
+            const completionTime = task.completion_time ? new Date(task.completion_time * 1000).toLocaleString() : '-';
+            
+            let executionTime = '-';
+            if (task.start_time && task.completion_time) {
+                executionTime = ((task.completion_time - task.start_time) / 60).toFixed(2) + ' 分钟';
+            } else if (task.start_time) {
+                const elapsed = (Date.now() / 1000 - task.start_time).toFixed(2);
+                executionTime = `进行中 (${elapsed} 秒)`;
+            }
+            
+            let infoHtml = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>任务ID:</strong> ${task.id}</p>
+                        <p><strong>类型:</strong> ${task.type || '未知'}</p>
+                        <p><strong>状态:</strong> ${status}</p>
+                        <p><strong>开始时间:</strong> ${startTime}</p>
+                        <p><strong>完成时间:</strong> ${completionTime}</p>
+                        <p><strong>执行时间:</strong> ${executionTime}</p>
+                    </div>
+            `;
+            
+            // 如果是复杂任务，显示额外信息
+            if (task.type === 'complex') {
+                infoHtml += `
+                    <div class="col-md-6">
+                        <p><strong>子任务总数:</strong> ${task.subtasks_total || '-'}</p>
+                        <p><strong>已执行子任务:</strong> ${task.subtasks_executed || '-'}</p>
+                        <p><strong>成功子任务:</strong> ${task.success_count || '-'}</p>
+                        <p><strong>失败子任务:</strong> ${task.failure_count || '-'}</p>
+                        <p><strong>执行批次数:</strong> ${task.batches_count || '-'}</p>
+                        <p><strong>进度:</strong> ${task.progress || '-'}</p>
+                    </div>
+                `;
+                
+                // 显示子任务卡片
+                $('#subtasks-card').show();
+                
+                // 渲染子任务列表
+                if (task.subtasks) {
+                    let subtasksHtml = '<div class="table-responsive"><table class="table table-sm table-striped">';
+                    subtasksHtml += '<thead><tr><th>子任务ID</th><th>状态</th><th>节点ID</th></tr></thead><tbody>';
+                    
+                    Object.entries(task.subtasks).forEach(function([subtaskId, subtaskInfo]) {
+                        const subtaskStatus = subtaskInfo.status || '未知';
+                        subtasksHtml += `
+                            <tr>
+                                <td>${subtaskId}</td>
+                                <td>${subtaskStatus}</td>
+                                <td>${subtaskInfo.node_id || '-'}</td>
+                            </tr>
+                        `;
+                    });
+                    
+                    subtasksHtml += '</tbody></table></div>';
+                    $('#subtasks-list').html(subtasksHtml);
+                } else {
+                    $('#subtasks-list').html('<p class="text-center text-muted">没有子任务数据</p>');
+                }
+            } else {
+                infoHtml += `
+                    <div class="col-md-6">
+                        <p><strong>节点ID:</strong> ${task.node_id || '-'}</p>
+                        <p><strong>优先级:</strong> ${task.priority || '-'}</p>
+                    </div>
+                `;
+            }
+            
+            infoHtml += '</div>';
+            
+            // 如果任务有错误，显示错误信息
+            if (task.error) {
+                infoHtml += `
+                    <div class="alert alert-danger mt-3">
+                        <h5>错误信息:</h5>
+                        <pre>${task.error}</pre>
+                    </div>
+                `;
+            }
+            
+            $('#task-info').html(infoHtml);
+        });
+    }
+    
+    // 加载任务结果
+    function loadTaskResult() {
+        $.getJSON(`/api/tasks/${taskId}/result`, function(result) {
+            if (result.error) {
+                $('#task-result').html(`<div class="alert alert-info">${result.error}</div>`);
+                return;
+            }
+            
+            if (result.message) {
+                $('#task-result').html(`<div class="alert alert-info">${result.message}</div>`);
+                return;
+            }
+            
+            // 生成结果HTML
+            let resultHtml = '';
+            
+            // 如果有摘要，显示摘要
+            if (result.result && result.result.summary) {
+                resultHtml += `
+                    <div class="mb-4">
+                        <h5>结果摘要:</h5>
+                        <div class="card">
+                            <div class="card-body">
+                                ${result.result.summary}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // 显示完整结果
+            resultHtml += `
+                <div>
+                    <h5>完整结果:</h5>
+                    <pre class="bg-light p-3 rounded">${JSON.stringify(result, null, 2)}</pre>
+                </div>
+            `;
+            
+            $('#task-result').html(resultHtml);
+        });
+    }
+    
+    // 初始加载
+    loadTaskDetail();
+    loadTaskResult();
+    
+    // 定时刷新
+    setInterval(loadTaskDetail, 5000);
+    setInterval(loadTaskResult, 10000);
+});
+</script>
+{% endblock %}

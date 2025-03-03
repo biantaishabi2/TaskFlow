@@ -1,0 +1,64 @@
+body {
+    padding-bottom: 70px;
+}
+
+.footer {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+}
+
+/* 添加一些间距 */
+.card {
+    margin-bottom: 1.5rem;
+}
+
+/* 表格样式 */
+.table-responsive {
+    overflow-x: auto;
+}
+
+.table th {
+    white-space: nowrap;
+}
+
+/* 加载状态 */
+.loading {
+    text-align: center;
+    padding: 2rem;
+    color: #6c757d;
+}
+
+/* 图表容器 */
+[id$="-chart"] {
+    min-height: 300px;
+}
+
+/* 任务状态颜色 */
+.status-completed {
+    color: #28a745;
+}
+
+.status-error {
+    color: #dc3545;
+}
+
+.status-running {
+    color: #007bff;
+}
+
+.status-planning {
+    color: #6c757d;
+}
+
+.status-executing {
+    color: #fd7e14;
+}
+
+/* 预格式化文本 */
+pre {
+    background-color: #f8f9fa;
+    padding: 1rem;
+    border-radius: 0.25rem;
+    overflow-x: auto;
+}

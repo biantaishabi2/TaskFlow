@@ -1,0 +1,25 @@
+version: '3'
+
+services:
+  code-rag:
+    build:
+      context: .
+      args:
+        - CLAUDE_CONFIG_PATH=.claude.json
+    container_name: code-rag
+    volumes:
+      - ./:/app
+      - ./logs:/app/logs
+    # 使用宿主机网络模式，直接共享宿主机的网络
+    network_mode: "host"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      # 使用宿主机代理的实际地址
+      - HTTP_PROXY=http://127.0.0.1:7890
+      - HTTPS_PROXY=http://127.0.0.1:7890
+      - NO_PROXY=localhost,127.0.0.1
+    restart: unless-stopped
+    # 默认以非root用户运行
+    user: claude-user
+    command: claude

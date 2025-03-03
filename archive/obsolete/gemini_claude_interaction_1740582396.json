@@ -1,0 +1,27 @@
+[
+  {
+    "event": "session_start",
+    "timestamp": "15:06:28",
+    "prompt": "写一个简单的Python计算器，支持加减乘除"
+  },
+  {
+    "event": "claude_started",
+    "timestamp": "15:06:30"
+  },
+  {
+    "role": "user",
+    "content": "写一个简单的Python计算器，支持加减乘除",
+    "timestamp": "15:06:30"
+  },
+  {
+    "event": "error",
+    "error": "'spawn' object has no attribute 'EOF'",
+    "timestamp": "15:06:30"
+  },
+  {
+    "event": "session_end",
+    "timestamp": "15:06:36",
+    "duration": "7.89秒",
+    "interaction_count": 0
+  }
+]

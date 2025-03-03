@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span>任务列表</span>
+        <div>
+            <input type="text" id="search-tasks" class="form-control" placeholder="搜索任务...">
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped" id="tasks-table">
+                <thead>
+                    <tr>
+                        <th>任务ID</th>
+                        <th>类型</th>
+                        <th>状态</th>
+                        <th>开始时间</th>
+                        <th>完成时间</th>
+                        <th>执行时间</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="tasks-list">
+                    <tr><td colspan="7" class="text-center">加载中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(document).ready(function() {
+    // 加载任务列表
+    function loadTasks() {
+        $.getJSON('/api/tasks', function(tasks) {
+            let html = '';
+            
+            if (tasks.length === 0) {
+                html = '<tr><td colspan="7" class="text-center">没有任务数据</td></tr>';
+            } else {
+                tasks.forEach(function(task) {
+                    const status = task.status === 'completed' ? 
+                        (task.success ? '<span class="text-success">成功</span>' : '<span class="text-danger">失败</span>') :
+                        task.status;
+                        
+                    const startTime = task.start_time ? new Date(task.start_time * 1000).toLocaleString() : '-';
+                    const completionTime = task.completion_time ? new Date(task.completion_time * 1000).toLocaleString() : '-';
+                    
+                    let executionTime = '-';
+                    if (task.start_time && task.completion_time) {
+                        executionTime = ((task.completion_time - task.start_time) / 60).toFixed(2) + ' 分钟';
+                    } else if (task.start_time) {
+                        executionTime = '进行中';
+                    }
+                    
+                    html += `
+                        <tr>
+                            <td>${task.id}</td>
+                            <td>${task.type || '未知'}</td>
+                            <td>${status}</td>
+                            <td>${startTime}</td>
+                            <td>${completionTime}</td>
+                            <td>${executionTime}</td>
+                            <td>
+                                <a href="/tasks/${task.id}" class="btn btn-sm btn-primary">详情</a>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+            
+            $('#tasks-list').html(html);
+        });
+    }
+    
+    // 搜索功能
+    $('#search-tasks').on('keyup', function() {
+        const value = $(this).val().toLowerCase();
+        $("#tasks-list tr").filter(function() {
+            $(this).toggle($(this).text().toLowerCase().indexOf(value) > -1)
+        });
+    });
+    
+    // 初始加载
+    loadTasks();
+    
+    // 定时刷新
+    setInterval(loadTasks, 30000);
+});
+</script>
+{% endblock %}
