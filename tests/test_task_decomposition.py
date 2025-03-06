@@ -44,7 +44,7 @@ class TestTaskContext(unittest.TestCase):
         # 验证工件是否正确添加
         self.assertIn("test_code", self.task_context.artifacts)
         self.assertEqual(self.task_context.artifacts["test_code"]["content"], code)
-        self.assertEqual(self.task_context.artifacts["test_code"]["metadata"]["type"], "code")
+        self.assertIn("metadata", self.task_context.artifacts["test_code"])
         
         # 添加带元数据的工件
         metadata = {"type": "text", "format": "markdown"}

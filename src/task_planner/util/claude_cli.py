@@ -18,13 +18,14 @@ class ClaudeState(Enum):
     BUSY = "busy"
     ERROR = "error"
 
-def claude_api(prompt, verbose=False, timeout=300, use_gemini=False, conversation_history=None):
+def claude_api(prompt, task_definition=None, verbose=False, timeout=500, use_gemini=False, conversation_history=None):
     """
     向Claude发送一个问题并获取回答。
     这是从Python代码中调用Claude命令行工具的主要函数。
     
     Args:
         prompt (str): 要发送给Claude的问题
+        task_definition (dict, optional): 当前任务定义，用于任务状态判断
         verbose (bool): 是否打印详细信息
         timeout (int): 命令执行超时时间(秒)
         use_gemini (bool): 是否使用Gemini来判断任务完成状态
@@ -58,6 +59,11 @@ def claude_api(prompt, verbose=False, timeout=300, use_gemini=False, conversatio
         if use_gemini:
             # 使用增强型客户端，带有Gemini分析器
             analyzer = GeminiTaskAnalyzer()  # 可以通过环境变量GEMINI_API_KEY设置API密钥
+            
+            # 如果提供了任务定义，传递给分析器
+            if task_definition:
+                analyzer.task_definition = task_definition
+                
             client = EnhancedClaudeClient(analyzer=analyzer, debug=verbose, timeout=timeout)
             
             # 启动客户端
@@ -78,7 +84,7 @@ def claude_api(prompt, verbose=False, timeout=300, use_gemini=False, conversatio
             # 发送请求并获取响应，不自动生成后续提问
             response, history = client.send_request(prompt, auto_continue=False)
             
-            # 获取任务状态
+            # 获取任务状态，传递任务定义
             task_status = client.analyze_completion(response)
             
             # 关闭客户端
@@ -118,7 +124,7 @@ def claude_api(prompt, verbose=False, timeout=300, use_gemini=False, conversatio
                 "status": "success",
                 "output": response,
                 "error_msg": "",
-                "task_status": "COMPLETED"  # 默认假设完成
+                "task_status": "NEEDS_VERIFICATION"  # 修改为需要验证状态
             }
     except TimeoutError:
         # 超时

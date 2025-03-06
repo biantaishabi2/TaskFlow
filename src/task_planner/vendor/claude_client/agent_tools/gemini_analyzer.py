@@ -102,7 +102,7 @@ class GeminiTaskAnalyzer(BaseTaskAnalyzer):
     def _build_analyzer_prompt(self, 
                               conversation_history: List[Tuple[str, str]], 
                               last_response: str) -> str:
-        """构建分析提示"""
+        """构建分析提示，加入任务定义作为判断依据"""
         # 获取原始请求
         original_request = conversation_history[0][0] if conversation_history else "无"
         
@@ -115,6 +115,36 @@ class GeminiTaskAnalyzer(BaseTaskAnalyzer):
         # 检测任务类型
         task_type = self._detect_task_type(original_request)
         
+        # 添加任务定义信息（如果有）
+        task_definition_text = ""
+        if hasattr(self, 'task_definition') and self.task_definition:
+            # 提取任务关键信息
+            task_id = self.task_definition.get('id', 'unknown')
+            task_name = self.task_definition.get('name', 'unknown')
+            task_description = self.task_definition.get('description', 'unknown')
+            
+            # 提取输出文件要求
+            output_files = self.task_definition.get('output_files', {})
+            output_files_text = "\n".join([f"- {key}: {value}" for key, value in output_files.items()])
+            
+            # 提取成功标准
+            success_criteria = self.task_definition.get('success_criteria', [])
+            success_criteria_text = "\n".join([f"- {criterion}" for criterion in success_criteria])
+            
+            # 构建任务定义部分
+            task_definition_text = f"""
+            ## 任务定义
+            - 任务ID: {task_id}
+            - 任务名称: {task_name}
+            - 任务描述: {task_description}
+            
+            ## 输出文件要求
+            {output_files_text}
+            
+            ## 成功标准
+            {success_criteria_text}
+            """
+        
         # 创建提示
         prompt = f"""
         分析下面AI回复是否完成了用户的请求。
@@ -122,6 +152,8 @@ class GeminiTaskAnalyzer(BaseTaskAnalyzer):
         原始请求: {original_request}
         
         任务类型: {task_type}
+        
+        {task_definition_text}
         
         对话历史摘要:
         {history_summary}
@@ -132,8 +164,8 @@ class GeminiTaskAnalyzer(BaseTaskAnalyzer):
         根据以下标准分析AI回复:
         1. 回复是否直接且完整地回答了用户的请求
         2. 回复是否包含所有必要的细节和信息
-        3. 回复是否存在需要继续解释或展开的内容
-        4. 回复是否提出了需要用户提供更多信息的问题
+        3. 回复是否提及创建了任务定义中要求的所有输出文件
+        4. 回复是否满足了所有的成功标准
         
         只返回以下三种状态之一（不要解释你的选择）:
         COMPLETED - 任务已经完成，无需进一步交互

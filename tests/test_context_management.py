@@ -126,9 +126,9 @@ class TestContextManager(unittest.TestCase):
         """测试后的清理工作"""
         # 清理测试目录
         if os.path.exists(self.context_dir):
-            for file in os.listdir(self.context_dir):
-                os.remove(os.path.join(self.context_dir, file))
-            os.rmdir(self.context_dir)
+            # 递归删除目录及其内容
+            import shutil
+            shutil.rmtree(self.context_dir)
     
     def test_create_subtask_context(self):
         """测试创建子任务上下文"""

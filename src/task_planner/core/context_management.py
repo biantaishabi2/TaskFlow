@@ -1,30 +1,34 @@
 #!/usr/bin/env python3
 """
 任务拆分与执行系统 - 上下文管理模块
-实现任务上下文管理和传递机制
+实现基于文件的任务上下文管理和传递机制
 """
 
 from datetime import datetime
 import copy
 import json
 import os
+import shutil
 
 class TaskContext:
-    """任务上下文类，用于存储和管理任务相关的上下文信息"""
+    """任务上下文类，用于管理任务相关的上下文信息，主要存储文件路径而非内容"""
     
-    def __init__(self, task_id, global_context=None):
+    def __init__(self, task_id, global_context=None, base_dir=None):
         """
         初始化任务上下文
         
         参数:
             task_id (str): 任务唯一标识符
             global_context (dict, optional): 全局共享上下文
+            base_dir (str, optional): 任务文件的基础目录
         """
         self.task_id = task_id
         self.global_context = global_context or {}  # 全局共享上下文
         self.local_context = {}  # 任务特定上下文
-        self.artifacts = {}  # 任务产生的工件（代码、文档等）
+        self.file_paths = {}  # 任务相关文件路径
         self.execution_history = []  # 执行历史
+        self.base_dir = base_dir
+        self.artifacts = {}  # 任务工件
         
     def update_global(self, key, value):
         """更新全局上下文"""
@@ -33,39 +37,38 @@ class TaskContext:
     def update_local(self, key, value):
         """更新本地上下文"""
         self.local_context[key] = value
-        
-    def add_artifact(self, name, content, metadata=None):
+    
+    def add_file_reference(self, name, file_path, metadata=None):
         """
-        添加任务产生的工件
+        添加任务关联的文件引用
         
         参数:
-            name (str): 工件名称
-            content (str/dict/list): 工件内容
-            metadata (dict, optional): 工件元数据，包含类型、格式等信息
+            name (str): 文件引用名称
+            file_path (str): 文件路径
+            metadata (dict, optional): 文件元数据，包含类型、格式等信息
         """
-        # 确保元数据包含工件类型
         metadata = metadata or {}
+        
+        # 确保元数据包含文件类型
         if 'type' not in metadata:
-            # 根据内容推断类型
-            if isinstance(content, str):
-                if content.startswith("def ") or content.startswith("class ") or "import " in content:
-                    metadata['type'] = 'code'
-                elif content.startswith("<") and ">" in content:
-                    metadata['type'] = 'markup'
-                else:
-                    metadata['type'] = 'text'
-            elif isinstance(content, dict):
-                metadata['type'] = 'structured_data'
-            elif isinstance(content, list):
-                metadata['type'] = 'collection'
+            # 根据文件扩展名推断类型
+            ext = os.path.splitext(file_path)[1].lower()
+            if ext in ['.py', '.js', '.java', '.c', '.cpp', '.cs', '.go', '.rs']:
+                metadata['type'] = 'code'
+            elif ext in ['.json', '.yaml', '.yml']:
+                metadata['type'] = 'data'
+            elif ext in ['.md', '.txt', '.rst']:
+                metadata['type'] = 'text'
+            elif ext in ['.png', '.jpg', '.jpeg', '.gif']:
+                metadata['type'] = 'image'
             else:
                 metadata['type'] = 'unknown'
                 
-        # 存储工件
-        self.artifacts[name] = {
-            'content': content,
+        # 存储文件引用
+        self.file_paths[name] = {
+            'path': file_path,
             'metadata': metadata,
-            'created_at': datetime.now().isoformat()
+            'added_at': datetime.now().isoformat()
         }
         
     def add_execution_record(self, action, result, metadata=None):
@@ -77,24 +80,70 @@ class TaskContext:
             'timestamp': datetime.now().isoformat()
         })
         
+    def add_artifact(self, name, content, metadata=None):
+        """
+        添加任务工件
+        
+        参数:
+            name (str): 工件名称
+            content (str/dict): 工件内容
+            metadata (dict, optional): 工件元数据
+        """
+        self.artifacts[name] = {
+            'content': content,
+            'metadata': metadata or {},
+            'created_at': datetime.now().isoformat()
+        }
+        
+    def get_file_content(self, file_reference_name):
+        """
+        获取引用文件的内容
+        
+        参数:
+            file_reference_name (str): 文件引用名称
+            
+        返回:
+            str/dict: 文件内容，根据文件类型自动解析
+        """
+        if file_reference_name not in self.file_paths:
+            return None
+            
+        file_path = self.file_paths[file_reference_name]['path']
+        file_type = self.file_paths[file_reference_name]['metadata'].get('type', 'unknown')
+        
+        try:
+            if file_type == 'data':
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            else:
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    return f.read()
+        except Exception as e:
+            print(f"无法读取文件 {file_path}: {str(e)}")
+            return None
+    
     def serialize(self):
         """序列化上下文以便传递或存储"""
         return {
             'task_id': self.task_id,
             'global_context': self.global_context,
             'local_context': self.local_context,
-            'artifacts': self.artifacts,
-            'execution_history': self.execution_history
+            'file_paths': self.file_paths,
+            'execution_history': self.execution_history,
+            'base_dir': self.base_dir,
+            'artifacts': self.artifacts
         }
         
     @classmethod
     def deserialize(cls, data):
         """从序列化数据重建上下文"""
-        context = cls(data['task_id'])
+        context = cls(data['task_id'], base_dir=data.get('base_dir'))
         context.global_context = data['global_context']
         context.local_context = data['local_context']
-        context.artifacts = data['artifacts']
+        context.file_paths = data['file_paths']
         context.execution_history = data['execution_history']
+        if 'artifacts' in data:
+            context.artifacts = data['artifacts']
         return context
         
     def save_to_file(self, file_path):
@@ -111,7 +160,7 @@ class TaskContext:
 
 
 class ContextManager:
-    """上下文管理器，用于管理多个任务的上下文和上下文传递"""
+    """上下文管理器，用于管理多个任务的上下文和基于文件的上下文传递"""
     
     def __init__(self, context_dir=None):
         """
@@ -125,9 +174,11 @@ class ContextManager:
         self.context_history = []  # 上下文变更历史
         self.context_dir = context_dir
         
-        # 如果指定了上下文目录，确保它存在
+        # 如果指定了上下文目录，确保它存在并创建子目录
         if self.context_dir and not os.path.exists(self.context_dir):
             os.makedirs(self.context_dir)
+            os.makedirs(os.path.join(self.context_dir, 'subtasks'), exist_ok=True)
+            os.makedirs(os.path.join(self.context_dir, 'results'), exist_ok=True)
         
     def create_subtask_context(self, parent_task_id, subtask_id, context_subset=None):
         """
@@ -143,8 +194,14 @@ class ContextManager:
         """
         parent_context = self.task_contexts.get(parent_task_id, TaskContext(parent_task_id, self.global_context))
         
+        # 为子任务创建结果目录
+        subtask_result_dir = None
+        if self.context_dir:
+            subtask_result_dir = os.path.join(self.context_dir, 'results', subtask_id)
+            os.makedirs(subtask_result_dir, exist_ok=True)
+        
         # 创建新的任务上下文
-        subtask_context = TaskContext(subtask_id, self.global_context.copy())
+        subtask_context = TaskContext(subtask_id, self.global_context.copy(), base_dir=subtask_result_dir)
         
         # 如果指定了上下文子集，只继承这些键
         if context_subset:
@@ -196,15 +253,16 @@ class ContextManager:
         
         return self.task_contexts[task_id]
         
-    def propagate_results(self, from_task_id, to_task_ids, keys=None, artifact_keys=None):
+    def propagate_results(self, from_task_id, to_task_ids, keys=None, file_reference_keys=None, artifact_keys=None):
         """
-        将一个任务的结果传播到其他任务
+        将一个任务的结果传播到其他任务（主要传递文件路径信息，而非内容）
         
         参数:
             from_task_id (str): 源任务ID
             to_task_ids (list): 目标任务ID列表
             keys (list, optional): 要传播的上下文键列表
-            artifact_keys (list, optional): 要传播的工件键列表，如果为None则传播所有工件
+            file_reference_keys (list, optional): 要传播的文件引用键列表，如果为None则传播所有文件引用
+            artifact_keys (list, optional): 要传播的工件键列表，如果为None则不传播工件
         """
         if from_task_id not in self.task_contexts:
             raise ValueError(f"源任务ID {from_task_id} 的上下文不存在")
@@ -213,7 +271,7 @@ class ContextManager:
         
         # 确定要传播的上下文键
         if keys is None:
-            # 默认传播所有结果（但不包括artifacts）
+            # 默认传播所有结果（但不包括file_paths）
             keys = list(source_context.local_context.keys())
             
         # 对每个目标任务传播上下文
@@ -230,35 +288,57 @@ class ContextManager:
                         source_context.local_context[key]
                     )
             
-            # 传播工件
-            if artifact_keys is not None or 'artifacts' in keys:
-                # 确定要传播的工件
-                if artifact_keys is None:
-                    # 传播所有工件
-                    artifact_keys = source_context.artifacts.keys()
+            # 传播文件引用
+            if file_reference_keys is not None or 'file_paths' in keys:
+                # 确定要传播的文件引用
+                if file_reference_keys is None:
+                    # 传播所有文件引用
+                    file_reference_keys = source_context.file_paths.keys()
                     
-                # 传播指定的工件
-                for art_name in artifact_keys:
-                    if art_name in source_context.artifacts:
-                        # 复制工件到目标上下文
-                        target_context.artifacts[art_name] = copy.deepcopy(
-                            source_context.artifacts[art_name]
+                # 传播指定的文件引用
+                for ref_name in file_reference_keys:
+                    if ref_name in source_context.file_paths:
+                        # 复制文件引用到目标上下文
+                        target_context.file_paths[ref_name] = copy.deepcopy(
+                            source_context.file_paths[ref_name]
                         )
                         
                         # 添加引用信息
-                        if 'references' not in target_context.artifacts[art_name]['metadata']:
-                            target_context.artifacts[art_name]['metadata']['references'] = []
+                        if 'references' not in target_context.file_paths[ref_name]['metadata']:
+                            target_context.file_paths[ref_name]['metadata']['references'] = []
                             
                         # 添加源任务引用
                         reference = {
                             'source_task': from_task_id,
                             'propagated_at': datetime.now().isoformat()
                         }
-                        target_context.artifacts[art_name]['metadata']['references'].append(reference)
+                        target_context.file_paths[ref_name]['metadata']['references'].append(reference)
                     
+            # 传播工件
+            if artifact_keys is not None:
+                # 确定要传播的工件
+                for artifact_name in artifact_keys:
+                    if artifact_name in source_context.artifacts:
+                        # 复制工件到目标上下文
+                        target_context.artifacts[artifact_name] = copy.deepcopy(
+                            source_context.artifacts[artifact_name]
+                        )
+                        
+                        # 添加引用信息
+                        if 'references' not in target_context.artifacts[artifact_name]['metadata']:
+                            target_context.artifacts[artifact_name]['metadata']['references'] = []
+                            
+                        # 添加源任务引用
+                        reference = {
+                            'source_task': from_task_id,
+                            'propagated_at': datetime.now().isoformat()
+                        }
+                        target_context.artifacts[artifact_name]['metadata']['references'].append(reference)
+            
             # 记录传播事件
             propagation_data = {
                 'context_keys': keys,
+                'file_reference_keys': list(file_reference_keys) if file_reference_keys is not None else [],
                 'artifact_keys': list(artifact_keys) if artifact_keys is not None else []
             }
             self._log_context_event('propagate', from_task_id, task_id, propagation_data)
@@ -283,11 +363,22 @@ class ContextManager:
             'task_id': task_id,
             'success': context.local_context.get('success', False),
             'output': context.local_context.get('output', ''),
+            'file_references': list(context.file_paths.keys()),
             'artifacts': list(context.artifacts.keys()),
             'execution_events': len(context.execution_history),
             'last_event': context.execution_history[-1] if context.execution_history else None,
             'key_metrics': context.local_context.get('metrics', {})
         }
+        
+        # 获取结果文件内容（如果存在）
+        result_file_path = None
+        if 'result_file' in context.file_paths:
+            result_file_path = context.file_paths['result_file']['path']
+            try:
+                with open(result_file_path, 'r', encoding='utf-8') as f:
+                    summary['result_data'] = json.load(f)
+            except Exception as e:
+                summary['result_load_error'] = str(e)
         
         return summary
         
@@ -335,6 +426,42 @@ class ContextManager:
         if os.path.exists(history_path):
             with open(history_path, 'r', encoding='utf-8') as f:
                 self.context_history = json.load(f)
+        
+    def create_output_directories(self, subtasks):
+        """
+        为子任务创建输出目录
+        
+        参数:
+            subtasks (list): 子任务列表
+        """
+        if not self.context_dir:
+            return
+            
+        for subtask in subtasks:
+            # 为每个子任务创建结果目录
+            subtask_id = subtask['id']
+            result_dir = os.path.join(self.context_dir, 'results', subtask_id)
+            os.makedirs(result_dir, exist_ok=True)
+            
+            # 创建子任务定义文件
+            subtask_def_path = os.path.join(self.context_dir, 'subtasks', f'{subtask_id}.json')
+            with open(subtask_def_path, 'w', encoding='utf-8') as f:
+                json.dump(subtask, f, ensure_ascii=False, indent=2)
+                
+            # 如果子任务定义了输出文件目录，确保它们存在
+            if 'output_files' in subtask:
+                for output_type, output_path in subtask['output_files'].items():
+                    # 如果路径是相对路径，转换为绝对路径
+                    if not os.path.isabs(output_path):
+                        output_path = os.path.join(self.context_dir, output_path)
+                        
+                    # 如果是目录路径，确保目录存在
+                    if output_path.endswith('/'):
+                        os.makedirs(output_path, exist_ok=True)
+                    else:
+                        # 确保父目录存在
+                        parent_dir = os.path.dirname(output_path)
+                        os.makedirs(parent_dir, exist_ok=True)
         
     def _log_context_event(self, event_type, primary_id, secondary_id=None, data=None):
         """
