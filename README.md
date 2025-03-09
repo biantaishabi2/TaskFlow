@@ -1,6 +1,6 @@
 # 任务规划与执行系统
 
-任务规划与执行系统是一个集成了Claude和Gemini的智能任务分解和执行框架，可以自动将复杂任务拆分为可管理的小任务，并按照依赖关系执行它们。
+任务规划与执行系统是一个集成了Claude、Gemini和AG2-Agent的智能任务分解和执行框架，可以自动将复杂任务拆分为可管理的小任务，并按照依赖关系执行它们。
 
 ## 主要功能
 
@@ -10,6 +10,7 @@
 - **并行任务执行**：支持并行执行无依赖关系的任务
 - **任务状态智能分析**：使用Gemini模型分析任务完成状态
 - **适应性执行**：根据任务状态分析结果动态调整执行流程
+- **AG2-Agent集成**：支持使用AG2-Agent执行器系统进行多种模式的任务执行
 
 ## 系统架构
 
@@ -20,6 +21,7 @@
 - **上下文管理器(ContextManager)**：管理任务执行过程中的上下文
 - **Claude集成**：提供任务执行的主要能力
 - **Gemini集成**：提供任务状态的智能分析
+- **AG2-Agent执行器**：提供多种执行模式的任务处理能力
 
 ## 快速开始
 
@@ -29,8 +31,8 @@
 
 ```bash
 # 从源码安装
-git clone git@github.com:biantaishabi2/TaskFlow.git
-cd TaskFlow
+git clone git@github.com:biantaishabi2/task_planner.git
+cd task_planner
 pip install -e .
 ```
 
@@ -154,6 +156,16 @@ for subtask in subtasks:
   - `claude_client/`: Claude客户端库
     - `agent_tools/`: 包含Gemini分析器等工具
       - `gemini_analyzer.py`: Gemini任务分析工具
+  - `ag2_agent/`: AG2-Agent执行器系统
+    - `core/`: AG2-Agent核心组件
+    - `chat_modes/`: 不同的聊天模式实现
+    - `factories/`: 工厂模式实现
+    - `utils/`: 工具和辅助功能
+
+- **ag2_engine/**: AG2执行引擎
+  - `adapters/`: 适配器
+  - `ag2_executor.py`: AG2执行器
+  - `config_loader.py`: 配置加载器
 
 - **task_planner/server/**: 服务器组件
   - `task_api_server.py`: API服务器
@@ -165,6 +177,30 @@ for subtask in subtasks:
 ### Gemini任务状态分析
 
 系统集成了Google的Gemini模型，用于分析任务完成状态。详情请参阅[Gemini集成指南](Gemini集成指南.md)。
+
+### AG2-Agent执行器系统
+
+系统集成了AG2-Agent执行器，支持多种聊天模式进行任务执行：
+
+- **集群聊天(Swarm)**：多个agent协同解决问题
+- **序列聊天(Sequential)**：多个agent按顺序处理任务
+- **双Agent聊天(Two-Agent)**：两个agent协作处理任务
+- **群组聊天(Group)**：多个agent以小组形式协作
+- **嵌套聊天(Nested)**：支持agent之间的嵌套对话
+
+使用示例:
+
+```python
+from ag2_engine.ag2_executor import AG2Executor
+from configs.ag2_config import load_config
+
+# 加载配置
+config = load_config("configs/ag2_config.yaml")
+# 创建执行器
+executor = AG2Executor(config)
+# 执行任务
+result = executor.execute("使用序列聊天模式分析数据")
+```
 
 ### 并行任务执行
 
@@ -182,7 +218,22 @@ results = executor.execute_subtasks(subtasks)
 - [任务拆分与执行系统设计文档](代码注释生成系统设计文档.md)
 - [任务拆分和执行系统实现步骤](任务拆分和执行系统实现步骤.md)
 - [Gemini集成指南](Gemini集成指南.md)
+- [代码结构重构文档](docs/code_structure_refactor.md)
+- [重构V2文档](docs/refactor_v2.md)
 
+## 部署
+
+系统提供了Docker支持，可以通过以下方式快速部署：
+
+```bash
+# 构建Docker镜像
+docker build -t task-planner .
+
+# 运行容器
+docker run -p 5000:5000 -p 8080:8080 task-planner
+```
+
+详细的Docker部署说明请参阅[Docker部署文档](README_DOCKER.md)。
 
 ## 许可证
 
@@ -190,4 +241,4 @@ results = executor.execute_subtasks(subtasks)
 
 ## 致谢
 
-感谢Claude和Gemini团队提供的强大模型支持。
+感谢Claude、Gemini和AG2-Agent团队提供的强大模型支持。
