@@ -1,0 +1,69 @@
+# AG2执行器配置
+
+# 定义可用的agents
+agents:
+  task_planner:
+    name: "任务规划专家"
+    type: "llm"
+    llm_config:
+      model_name: "claude-3-5-sonnet"
+      temperature: 0.2
+      system_message: "你是一个专业的任务规划专家，负责将复杂任务分解为可执行的子任务。"
+  
+  executor:
+    name: "代码执行者"
+    type: "llm"
+    llm_config:
+      model_name: "claude-3-5-sonnet"
+      temperature: 0.0
+      system_message: "你是一个代码执行专家，负责执行代码并报告结果。"
+  
+  analyst:
+    name: "数据分析专家"
+    type: "llm"
+    llm_config:
+      model_name: "claude-3-5-sonnet" 
+      temperature: 0.1
+      system_message: "你是一个数据分析专家，擅长解读数据并提供见解。"
+
+# 定义可用的工具
+tools:
+  file_reader:
+    description: "读取本地文件内容"
+    adapter: "task_planner.ag2_engine.adapters.tool_adapters.FileToolAdapter"
+    params:
+      base_path: "/home/data"
+  
+  web_search:
+    description: "搜索互联网获取信息"
+    adapter: "task_planner.ag2_engine.adapters.tool_adapters.WebSearchAdapter"
+    params:
+      api_key: "${WEB_SEARCH_API_KEY}"
+
+# 特定对话模式的配置
+modes:
+  two_agent:
+    agents: ["task_planner", "executor"]
+    config:
+      max_turns: 10
+  
+  sequential:
+    agents: ["task_planner", "executor", "analyst"]
+    config:
+      max_turns: 10
+      timeout: 300
+  
+  group:
+    agents: ["task_planner", "executor", "analyst"]
+    config:
+      max_rounds: 5
+      facilitator: "task_planner"
+  
+  swarm:
+    agents:
+      coordinator: "task_planner"
+      coder: "executor"
+      reviewer: "analyst"
+    config:
+      max_subtasks: 5
+      parallel_execution: true
