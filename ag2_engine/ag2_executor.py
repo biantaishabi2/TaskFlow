@@ -54,9 +54,84 @@ class AG2Executor:
     def _setup_agents(self) -> None:
         """从配置设置agents"""
         for name, agent_config in self.config.get('agents', {}).items():
-            # 创建MockAgent实例
-            from vendor.ag2_agent.utils.mock_agent import MockAgent
-            agent = MockAgent(name=name)
+            agent_type = agent_config.get('type', 'mock')
+            
+            if agent_type == 'llm':
+                # 使用StandardLLMAgent
+                from ag2_engine.adapters.standard_llm_agent import StandardLLMAgent
+                
+                llm_config = agent_config.get('llm_config', {})
+                system_message = agent_config.get('system_message')
+                
+                agent = StandardLLMAgent(
+                    name=agent_config.get('name', name),
+                    llm_config=llm_config,
+                    system_message=system_message
+                )
+            elif agent_type == 'external_llm':
+                # 使用已废弃的ExternalLLMConfig (仅用于兼容旧代码)
+                from ag2_engine.adapters.llm_config_adapter import ExternalLLMConfig
+                from ag2_engine.adapters.llm_adapters import ClaudeLLMAdapter
+                
+                # 创建LLM服务
+                llm_service = ClaudeLLMAdapter(
+                    model_name=agent_config.get('model_name', 'claude-3-5-sonnet')
+                )
+                
+                # 创建外部LLM配置
+                llm_config = ExternalLLMConfig(
+                    llm_service=llm_service,
+                    model_name=agent_config.get('model_name', 'claude-3-5-sonnet'),
+                    temperature=agent_config.get('temperature', 0.7),
+                    max_tokens=agent_config.get('max_tokens')
+                )
+                
+                # 创建使用外部LLM的代理
+                class CustomAgent:
+                    def __init__(self, name, llm_config):
+                        self.name = name
+                        self.llm_config = llm_config
+                        
+                    async def generate_response(self, message, history=None, context=None):
+                        # 准备消息格式
+                        messages = []
+                        
+                        # 添加系统消息
+                        if agent_config.get('system_message'):
+                            messages.append({
+                                'role': 'system',
+                                'content': agent_config.get('system_message')
+                            })
+                        
+                        # 添加历史消息
+                        if history:
+                            for item in history:
+                                role = 'assistant' if item.get('sender') == self.name else 'user'
+                                messages.append({
+                                    'role': role,
+                                    'content': item.get('message', '')
+                                })
+                        
+                        # 添加当前消息
+                        messages.append({
+                            'role': 'user',
+                            'content': message
+                        })
+                        
+                        # 使用LLM配置生成响应
+                        result = await self.llm_config.generate(messages)
+                        return result.get('content')
+                    
+                    def bind_tools(self, tools):
+                        # 实现bind_tools接口
+                        pass
+                
+                agent = CustomAgent(name=agent_config.get('name', name), llm_config=llm_config)
+            else:
+                # 默认使用MockAgent
+                from vendor.ag2_agent.utils.mock_agent import MockAgent
+                agent = MockAgent(name=agent_config.get('name', name))
+            
             # 注册代理
             self.manager.register_agent(name, agent)
     

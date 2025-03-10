@@ -202,6 +202,42 @@ executor = AG2Executor(config)
 result = executor.execute("使用序列聊天模式分析数据")
 ```
 
+#### AG2引擎与OpenRouter集成
+
+AG2引擎现已支持通过OpenRouter API调用各种LLM模型，包括Google Gemini、Anthropic Claude等。这种集成方式提供了几个重要的优势：
+
+- **灵活的模型选择**：通过单一API访问多种LLM模型
+- **模型回退机制**：当主模型不可用时，自动尝试备选模型
+- **标准化配置**：使用统一的`config_list`格式配置多个LLM模型
+
+配置示例：
+
+```yaml
+# AG2配置文件示例 (configs/ag2_config.yaml)
+agents:
+  task_planner:
+    name: "任务规划专家"
+    type: "llm"
+    system_message: "你是一个专业的任务规划专家，负责将复杂任务分解为可执行的子任务。"
+    llm_config:
+      config_list:
+        - api_type: "openai"  # 使用OpenAI兼容API格式
+          model: "google/gemini-2.0-flash-lite-001"  # Gemini模型
+          temperature: 0.2
+          api_key: "${OPENROUTER_API_KEY}"  # 使用环境变量
+          base_url: "https://openrouter.ai/api/v1"  # OpenRouter端点
+          extra_headers:
+            HTTP-Referer: "https://github.com/anthropics/claude-code"
+            X-Title: "AG2-Executor-Task-Planner"
+```
+
+设置环境变量并运行：
+
+```bash
+export OPENROUTER_API_KEY=your_api_key_here
+python examples/ag2_execution_example.py
+```
+
 ### 并行任务执行
 
 对于没有相互依赖的任务，系统支持并行执行以提高效率：
