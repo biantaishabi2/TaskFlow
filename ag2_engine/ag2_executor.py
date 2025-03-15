@@ -1,31 +1,36 @@
 import os
 import yaml
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 
 import sys
-import os
 
 # 添加vendor目录到Python路径
 vendor_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'vendor')
 if vendor_dir not in sys.path:
     sys.path.append(vendor_dir)
 
-from ag2_agent import create_orchestration_manager
-from ag2_agent.factories.factory_registry import register_default_factories
+from vendor.ag2_agent import create_orchestration_manager
+from vendor.ag2_agent.factories.factory_registry import register_default_factories
 
 class AG2Executor:
     """基于AG2-Agent的独立执行器"""
     
-    def __init__(self, config_path: Optional[str] = None, mode: str = "sequential"):
+    def __init__(self, config_path_or_dict: Optional[Union[str, Dict[str, Any]]] = None, mode: str = "sequential"):
         """初始化AG2执行器
         
         Args:
-            config_path: AG2配置文件路径
+            config_path_or_dict: AG2配置文件路径或配置字典
             mode: 对话模式 (two_agent, sequential, group, nested, swarm)
         """
         self.manager = create_orchestration_manager()
-        self.config = self._load_config(config_path)
+        
+        # 处理配置（可以是路径或字典）
+        if isinstance(config_path_or_dict, dict):
+            self.config = config_path_or_dict
+        else:
+            self.config = self._load_config(config_path_or_dict)
+            
         self.mode = mode
         
         # 注册默认工厂
@@ -168,43 +173,97 @@ class AG2Executor:
         mode_config = self.config.get('modes', {}).get(self.mode, {})
         return mode_config.get('agents', {})
     
-    def execute(self, task: Dict[str, Any]) -> Dict[str, Any]:
+    def execute(self, task: Union[str, Dict[str, Any]],
+               mode: Optional[str] = None,
+               agents: Optional[Dict[str, str]] = None,
+               callbacks: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """执行任务
         
         Args:
-            task: 任务描述字典
+            task: 任务描述（字符串或字典）
+            mode: 可选的对话模式（覆盖初始化时设置的模式）
+            agents: 可选的agent角色映射
+            callbacks: 可选的回调函数
             
         Returns:
             执行结果
         """
         # 使用asyncio运行异步代码
-        return asyncio.run(self._execute_async(task))
-    
-    async def _execute_async(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        return asyncio.run(self._execute_async(task, mode, agents, callbacks))
+        
+    async def execute_async(self, task: Union[str, Dict[str, Any]],
+                          mode: Optional[str] = None,
+                          agents: Optional[Dict[str, str]] = None,
+                          callbacks: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """异步执行任务
         
         Args:
-            task: 任务描述字典
+            task: 任务描述（字符串或字典）
+            mode: 可选的对话模式（覆盖初始化时设置的模式）
+            agents: 可选的agent角色映射
+            callbacks: 可选的回调函数
             
         Returns:
             执行结果
         """
-        # 根据任务和模式创建对话
-        agents = self._get_agents_for_mode()
+        # 直接调用内部执行方法
+        return await self._execute_async(task, mode, agents, callbacks)
+    
+    async def _execute_async(self, task: Union[str, Dict[str, Any]],
+                            mode: Optional[str] = None,
+                            agents_override: Optional[Dict[str, str]] = None,
+                            callbacks: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """异步执行任务
+        
+        Args:
+            task: 任务描述（字符串或字典）
+            mode: 可选的对话模式（覆盖初始化时设置的模式）
+            agents_override: 可选的agent角色映射（覆盖配置）
+            callbacks: 可选的回调函数
+            
+        Returns:
+            执行结果
+        """
+        # 确定对话模式
+        use_mode = mode if mode else self.mode
+        
+        # 将字符串任务转换为字典
+        task_dict = task if isinstance(task, dict) else {"description": task}
+        
+        # 获取初始消息
+        initial_message = task_dict.get("description", "") if isinstance(task_dict, dict) else str(task_dict)
+        
+        # 获取agent配置
+        if agents_override:
+            agents = {}
+            for role, agent_name in agents_override.items():
+                if agent_name in self.manager.agent_registry:
+                    agents[role] = self.manager.agent_registry[agent_name]
+                else:
+                    raise ValueError(f"Agent '{agent_name}' not found in registry")
+        else:
+            agents = self._get_agents_for_mode()
+        
+        # 创建对话
         chat = self.manager.create_chat(
-            mode=self.mode,
+            mode=use_mode,
             agents=agents,
-            initial_prompt=task.get("description", ""),
-            config=self.config.get('modes', {}).get(self.mode, {}).get('config', {})
+            initial_prompt=initial_message,
+            config=self.config.get('chat_settings', {}).get('config', {})
         )
         
+        # 注册回调
+        if callbacks:
+            for event_type, callback_fn in callbacks.items():
+                chat.register_callback(event_type, callback_fn)
+        
         # 执行对话
-        response = await chat.initiate_chat(task.get("description", ""))
+        response = await chat.initiate_chat(initial_message)
         
         # 如果需要额外的任务处理
-        if task.get("follow_up"):
-            for message in task.get("follow_up"):
-                response = await chat.continue_chat(message)
+        follow_ups = task_dict.get("follow_up", []) if isinstance(task_dict, dict) else []
+        for message in follow_ups:
+            response = await chat.continue_chat(message)
         
         # 结束对话并获取结果
         result = chat.end_chat()
