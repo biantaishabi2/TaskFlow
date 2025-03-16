@@ -62,13 +62,36 @@ task-planner distributed --mode master --api-port 5000 --task "复杂任务描�
 > task-planner execute "设计一个简单的Python网站内容管理系统"
 > task-planner execute -f task.txt --logs-dir custom_logs
 > 
+> # 使用Claude执行器（默认使用AG2执行器）
+> task-planner execute "创建数据分析报告" --use-claude
+> 
 > # 仅进行任务规划
 > task-planner plan "设计一个数据分析流程" 
 > task-planner plan -f task.txt --output custom_output
 > 
 > # 执行已拆分的多个子任务（不进行规划）
 > task-planner run-subtasks -f subtasks.json --logs-dir custom_logs
+> 
+> # 使用Claude执行器运行子任务（默认使用AG2执行器）
+> task-planner run-subtasks subtasks.json --use-claude
 > ```
+
+#### 执行器选择
+
+系统提供了两种执行器：
+
+1. **AG2执行器（默认）**：基于AG2-Agent的执行器，使用双代理模式进行任务执行，支持更复杂的交互和工具调用。
+2. **Claude执行器**：基于Claude的执行器，适用于需要强大语言理解和生成能力的任务。
+
+可以通过`--use-claude`参数选择使用Claude执行器：
+
+```bash
+# 使用Claude执行器
+task-planner execute "创建数据分析报告" --use-claude
+
+# 使用默认的AG2执行器
+task-planner execute "创建数据分析报告"
+```
 
 #### 使用预定义子任务
 
@@ -110,18 +133,29 @@ task-planner run-subtasks -f path/to/subtasks.json
 ```python
 from task_planner.core.task_planner import TaskPlanner
 from task_planner.core.task_executor import TaskExecutor
+from task_planner.core.ag2_two_agent_executor import AG2TwoAgentExecutor
 from task_planner.core.context_management import ContextManager
 from task_planner.core.task_decomposition_system import TaskDecompositionSystem
 
 # 方法1: 使用完整的任务分解系统（规划者和执行者双层循环）
+# 默认使用AG2执行器
 system = TaskDecompositionSystem()
 result = system.execute_complex_task("我的复杂任务描述")
+
+# 使用Claude执行器
+system_claude = TaskDecompositionSystem(use_claude=True)
+result = system_claude.execute_complex_task("我的复杂任务描述")
 
 # 方法2: 分开使用规划器和执行器
 # 初始化组件
 context_manager = ContextManager()
 planner = TaskPlanner("我的复杂任务描述", context_manager=context_manager)
-executor = TaskExecutor(context_manager=context_manager, use_gemini=True)
+
+# 使用AG2执行器（推荐）
+executor = AG2TwoAgentExecutor(context_manager=context_manager)
+
+# 或者使用Claude执行器
+# executor = TaskExecutor(context_manager=context_manager, use_gemini=True)
 
 # 任务分析和拆分
 analysis = planner.analyze_task()

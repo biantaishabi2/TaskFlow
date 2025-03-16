@@ -9,8 +9,8 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.append(current_dir)
 
-from core.orchestration_manager import OrchestrationManager
-from factories.factory_registry import register_default_factories
+from vendor.ag2_agent.core.orchestration_manager import OrchestrationManager
+from vendor.ag2_agent.factories.factory_registry import register_default_factories
 
 __version__ = "0.1.0"
 

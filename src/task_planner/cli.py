@@ -41,38 +41,27 @@ def main():
     )
     subparsers = parser.add_subparsers(dest='command', help='要运行的命令')
     
-    # 分布式系统命令
-    distributed_parser = subparsers.add_parser('distributed', 
-        help='运行分布式任务系统',
-        description='运行分布式任务系统，支持主节点和工作节点模式',
+    # API服务器命令
+    api_parser = subparsers.add_parser('api', 
+        help='运行任务API服务器',
+        description='运行任务API服务器，提供HTTP接口访问任务系统功能',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 示例:
-  # 运行主节点，指定API端口和任务
-  task-planner distributed --mode master --api-port 5000 --task "创建一个博客系统"
+  # 在默认端口(9000)运行API服务器
+  task-planner api
   
-  # 运行主节点，从文件读取任务
-  task-planner distributed --mode master --api-port 5000 --file --task task.txt
+  # 在指定端口运行API服务器
+  task-planner api --port 8000
   
-  # 运行工作节点，连接到主节点
-  task-planner distributed --mode worker --api-port 5001
-
-  # 启用异步模式
-  task-planner distributed --mode master --api-port 5000 --task "创建数据分析报告" --async
+  # 指定日志目录
+  task-planner api --port 8000 --logs-dir custom_logs
 '''
     )
-    distributed_parser.add_argument('--mode', choices=['master', 'worker'], required=True,
-                                   help='运行模式: master(主节点)或worker(工作节点)')
-    distributed_parser.add_argument('--api-port', type=int, required=True,
-                                   help='API服务端口号')
-    distributed_parser.add_argument('--workers', type=int, default=2,
-                                   help='工作线程数量 (默认: 2)')
-    distributed_parser.add_argument('--task', type=str,
-                                   help='任务描述文本或任务文件路径(与--file一起使用时)')
-    distributed_parser.add_argument('--file', action='store_true',
-                                   help='从文件读取任务，与--task一起使用指定文件路径')
-    distributed_parser.add_argument('--async', action='store_true', dest='is_async',
-                                   help='启用异步任务处理模式')
+    api_parser.add_argument('--port', type=int, default=9000,
+                           help='API服务端口号(默认: 9000)')
+    api_parser.add_argument('--logs-dir', default='logs',
+                           help='日志目录(默认: logs)')
     
     # 可视化服务器命令
     viz_parser = subparsers.add_parser('visualization', 
@@ -111,6 +100,9 @@ def main():
   
   # 从文件读取任务并指定日志目录
   task-planner execute -f complex_task.txt --logs-dir custom_logs
+  
+  # 使用Claude执行器而不是默认的AG2
+  task-planner execute "创建数据分析报告" --use-claude
 '''
     )
     task_parser.add_argument('task', nargs='?', 
@@ -119,6 +111,8 @@ def main():
                             help='任务描述文件路径，从文件读取任务内容')
     task_parser.add_argument('--logs-dir', help='日志保存目录(默认: logs)', 
                             default='logs')
+    task_parser.add_argument('--use-claude', action='store_true',
+                            help='使用Claude作为执行器(默认使用AG2)')
     
     # 任务规划命令
     plan_parser = subparsers.add_parser('plan', 
@@ -149,68 +143,58 @@ def main():
                             default='output')
     
     # 执行预定义子任务命令
-    subtasks_parser = subparsers.add_parser('run-subtasks', 
-        help='执行预定义的子任务，不进行规划',
-        description='执行已定义的子任务序列，按照依赖关系顺序执行',
+    subtasks_parser = subparsers.add_parser('run-subtasks',
+        help='执行子任务列表',
+        description='执行已分解的子任务列表',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 示例:
-  # 执行预定义的子任务
-  task-planner run-subtasks -f subtasks.json
+  # 执行子任务文件中的所有任务
+  task-planner run-subtasks subtasks.json
   
   # 指定自定义日志目录
-  task-planner run-subtasks -f data_analysis_subtasks.json --logs-dir data_analysis_logs
+  task-planner run-subtasks subtasks.json --logs-dir my_subtasks_logs
   
-  # 子任务JSON文件格式示例:
-  # [
-  #   {
-  #     "id": "task1",
-  #     "name": "数据预处理",
-  #     "description": "准备数据分析所需的数据集",
-  #     "instruction": "详细的任务执行指令...",
-  #     "dependencies": []
-  #   },
-  #   {
-  #     "id": "task2",
-  #     "name": "数据分析",
-  #     "description": "分析处理后的数据",
-  #     "instruction": "详细的任务执行指令...",
-  #     "dependencies": ["task1"]
-  #   }
-  # ]
+  # 使用Claude执行器而不是默认的AG2
+  task-planner run-subtasks subtasks.json --use-claude
 '''
     )
-    subtasks_parser.add_argument('-f', '--file', required=True, 
-                                help='包含子任务定义的JSON文件路径')
-    subtasks_parser.add_argument('--logs-dir', help='日志保存目录(默认: logs)', 
+    subtasks_parser.add_argument('subtasks_file',
+                                help='包含子任务列表的JSON文件路径')
+    subtasks_parser.add_argument('--logs-dir', help='日志保存目录(默认: logs)',
                                 default='logs')
+    subtasks_parser.add_argument('--use-claude', action='store_true',
+                                help='使用Claude作为执行器(默认使用AG2)')
     
     args = parser.parse_args()
     
     # 确保脚本可以找到正确的模块
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
-    if args.command == 'distributed':
-        # 动态导入模块
-        module_path = os.path.join(base_dir, 'src', 'distributed', 'distributed_task_decomposition_system.py')
-        distributed_module = import_module_from_path('distributed_system', module_path)
+    if args.command == 'api':
+        # 导入API服务器模块
+        sys.path.insert(0, base_dir)
+        from task_planner.server.task_api_server import app
+        import logging
+
+        # 确保日志目录存在
+        os.makedirs(args.logs_dir, exist_ok=True)
         
-        # 重构命令行参数以适应原始脚本的期望
-        sys.argv = [sys.argv[0]]
-        for k, v in vars(args).items():
-            if k not in ['command'] and v is not None:
-                if isinstance(v, bool):
-                    if v:  # 只添加为真的布尔标志
-                        sys.argv.append(f'--{k}')
-                else:
-                    sys.argv.append(f'--{k}')
-                    sys.argv.append(str(v))
+        # 配置日志
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.StreamHandler(),
+                logging.FileHandler(os.path.join(args.logs_dir, 'task_api_server.log'))
+            ]
+        )
+        logger = logging.getLogger('task_api_server')
         
-        # 调用原始模块的main函数
-        if hasattr(distributed_module, 'main'):
-            distributed_module.main()
-        else:
-            print("Error: 找不到分布式系统模块的main函数")
+        # 启动API服务器
+        print(f"启动任务API服务器，端口: {args.port}")
+        logger.info(f"启动任务API服务器，端口: {args.port}")
+        app.run(host='0.0.0.0', port=args.port)
             
     elif args.command == 'visualization':
         # 动态导入模块
@@ -254,10 +238,14 @@ def main():
             os.makedirs(args.logs_dir, exist_ok=True)
             
             # 初始化任务拆分系统
-            system = TaskDecompositionSystem(logs_dir=args.logs_dir)
+            system = TaskDecompositionSystem(
+                logs_dir=args.logs_dir,
+                use_claude=args.use_claude
+            )
             
             # 执行任务
             print(f"开始执行任务...\n{'-'*40}\n{task_text}\n{'-'*40}")
+            print(f"使用{'Claude' if args.use_claude else 'AG2'}执行器")
             start_time = time.time()
             
             result = system.execute_complex_task(task_text)
@@ -357,116 +345,50 @@ def main():
         try:
             # 动态导入需要的模块
             sys.path.insert(0, base_dir)
-            from task_planner.core.task_executor import TaskExecutor
-            from task_planner.core.context_management import ContextManager, TaskContext
-            import json  # 确保json模块在此处导入
+            from task_planner.core.task_decomposition_system import TaskDecompositionSystem
+            import json
             
             # 确保日志目录存在
             log_dir = os.path.join(os.getcwd(), args.logs_dir, "subtasks_execution")
             os.makedirs(log_dir, exist_ok=True)
             
             # 读取子任务定义文件
-            with open(args.file, 'r', encoding='utf-8') as f:
+            with open(args.subtasks_file, 'r', encoding='utf-8') as f:
                 subtasks = json.load(f)
                 
             print("="*50)
             print("预定义子任务执行")
             print("="*50)
             print(f"从文件加载了 {len(subtasks)} 个子任务")
+            print(f"使用{'Claude' if args.use_claude else 'AG2'}执行器")
             
-            # 初始化上下文管理器
-            context_manager = ContextManager(context_dir=log_dir)
+            # 初始化任务拆分系统
+            system = TaskDecompositionSystem(
+                logs_dir=args.logs_dir,
+                use_claude=args.use_claude
+            )
             
-            # 初始化上下文和依赖关系
-            for subtask in subtasks:
-                if 'id' not in subtask:
-                    subtask['id'] = f"task_{subtask.get('name', '').lower().replace(' ', '_')}"
-                    
-                task_id = subtask["id"]
-                # 创建任务上下文
-                task_context = TaskContext(task_id)
-                # 存储任务定义
-                task_context.update_local("task_definition", subtask)
-                # 添加到上下文管理器
-                context_manager.task_contexts[task_id] = task_context
-            
-            # 初始化任务执行器
-            executor = TaskExecutor(context_manager=context_manager, verbose=True)
-            
-            # 按依赖关系顺序执行任务
-            print("\n开始执行任务序列...")
-            results = {}
-            
-            # 1. 执行无依赖的任务
-            for subtask in subtasks:
-                if not subtask.get("dependencies", []):
-                    print(f"\n执行任务: {subtask['name']} (ID: {subtask['id']})")
-                    result = executor.execute_subtask(subtask)
-                    results[subtask["id"]] = result
-                    print(f"任务 {subtask['name']} 执行{'成功' if result.get('success') else '失败'}")
-                    
-                    # 显示执行摘要
-                    if "result" in result and "summary" in result["result"]:
-                        print(f"结果摘要: {result['result']['summary']}")
-            
-            # 2. 为依赖任务准备上下文
-            for subtask in subtasks:
-                if subtask.get("dependencies", []):
-                    task_id = subtask["id"]
-                    
-                    # 收集依赖任务的结果
-                    dependency_results = {}
-                    all_dependencies_met = True
-                    
-                    for dep_id in subtask["dependencies"]:
-                        if dep_id in results:
-                            dependency_results[dep_id] = results[dep_id]
-                        else:
-                            print(f"警告: 依赖任务 {dep_id} 的结果不可用")
-                            all_dependencies_met = False
-                    
-                    # 更新任务上下文中的依赖结果
-                    if all_dependencies_met:
-                        context_manager.task_contexts[task_id].update_local("dependency_results", dependency_results)
-            
-            # 3. 执行有依赖的任务
-            for subtask in subtasks:
-                if subtask.get("dependencies", []):
-                    # 检查所有依赖是否已执行成功
-                    dependencies_ok = all(dep_id in results and results[dep_id].get("success", False) 
-                                        for dep_id in subtask["dependencies"])
-                    
-                    if dependencies_ok:
-                        print(f"\n执行任务: {subtask['name']} (ID: {subtask['id']})")
-                        result = executor.execute_subtask(subtask)
-                        results[subtask["id"]] = result
-                        print(f"任务 {subtask['name']} 执行{'成功' if result.get('success') else '失败'}")
-                        
-                        # 显示执行摘要
-                        if "result" in result and "summary" in result["result"]:
-                            print(f"结果摘要: {result['result']['summary']}")
-                    else:
-                        print(f"\n跳过任务 {subtask['name']} (ID: {subtask['id']})，因为依赖任务未成功执行")
+            # 执行任务
+            result = system.execute_complex_task({
+                'type': 'subtasks_execution',
+                'subtasks': subtasks
+            })
             
             # 保存执行结果
             results_file = os.path.join(log_dir, f"execution_results_{int(datetime.now().timestamp())}.json")
             with open(results_file, "w", encoding="utf-8") as f:
-                json.dump(results, f, ensure_ascii=False, indent=2)
-            
-            # 保存上下文信息
-            context_manager.save_all_contexts()
+                json.dump(result, f, ensure_ascii=False, indent=2)
             
             print(f"\n执行结果已保存到: {results_file}")
-            print(f"上下文信息已保存到: {log_dir}")
             print("\n执行完成")
             print("="*50)
             
         except ImportError as e:
             print(f"Error: 无法导入必要的模块: {e}")
         except FileNotFoundError:
-            print(f"Error: 找不到任务定义文件: {args.file}")
+            print(f"Error: 找不到任务定义文件: {args.subtasks_file}")
         except json.JSONDecodeError:
-            print(f"Error: 任务定义文件不是有效的JSON格式: {args.file}")
+            print(f"Error: 任务定义文件不是有效的JSON格式: {args.subtasks_file}")
     
     else:
         parser.print_help()

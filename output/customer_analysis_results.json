@@ -2,106 +2,145 @@
   "task_id": "CUSTOMER_ANALYSIS_001",
   "success": true,
   "result": {
-    "summary": "成功完成客户分析，分析了41位客户的价值和行为特征",
+    "summary": "成功完成客户分析，包括客户生命周期价值计算、客户细分和客户画像构建",
     "details": {
-      "clv_metrics": {
-        "average_clv": 504769.5041159221,
-        "max_clv": 2140043.4068391584,
-        "min_clv": 3292.7064773733864,
+      "clv_analysis": {
+        "avg_acquisition_cost": "¥100.00",
+        "avg_retention_cost": "¥16,741.35",
+        "avg_purchase_frequency": "2.44",
+        "avg_retention_rate": "78.05%",
+        "avg_clv": "¥504,769.50",
+        "clv_by_member_level": {
+          "Bronze": "¥427,036.30",
+          "Gold": "¥634,399.72",
+          "Platinum": "¥1,597,693.72",
+          "Silver": "¥273,550.34"
+        },
         "clv_distribution": {
-          "低CLV": 11,
-          "中低CLV": 10,
-          "中高CLV": 10,
-          "高CLV": 10
+          "min": "¥3,292.71",
+          "p25": "¥131,700.11",
+          "median": "¥309,684.32",
+          "p75": "¥603,775.76",
+          "max": "¥2,140,043.41"
         }
       },
-      "behavioral_metrics": {
-        "average_retention_rate": 0.7804878048780487,
-        "average_purchase_frequency": 2.4390243902439024,
-        "average_monetary_value": 167413.4870119176,
+      "rfm_analysis": {
         "segment_distribution": {
-          "流失风险客户": 11,
-          "一般价值客户": 11,
-          "高价值客户": 10,
-          "有增长潜力客户": 9
-        }
+          "流失风险客户": "26.83%",
+          "一般价值客户": "26.83%",
+          "高价值客户": "24.39%",
+          "有增长潜力客户": "21.95%"
+        },
+        "segment_profiles": {
+          "frequency": {
+            "一般价值客户": 1.7272727272727273,
+            "有增长潜力客户": 3.0,
+            "流失风险客户": 1.0909090909090908,
+            "高价值客户": 4.2
+          },
+          "monetary": {
+            "一般价值客户": 123472.69203322289,
+            "有增长潜力客户": 215747.75602390955,
+            "流失风险客户": 64014.40260939567,
+            "高价值客户": 285986.5122204631
+          },
+          "recency": {
+            "一般价值客户": 46.54545454545455,
+            "有增长潜力客户": 50.77777777777778,
+            "流失风险客户": 84.0,
+            "高价值客户": 21.1
+          },
+          "clv": {
+            "一般价值客户": 621994.4168585148,
+            "有增长潜力客户": 540170.0623428164,
+            "流失风险客户": 136274.83783044803,
+            "高价值客户": 749305.7306088868
+          },
+          "retention_rate": {
+            "一般价值客户": 0.8272727272727273,
+            "有增长潜力客户": 0.7222222222222222,
+            "流失风险客户": 0.7363636363636363,
+            "高价值客户": 0.8300000000000001
+          },
+          "age": {
+            "一般价值客户": 39.72727272727273,
+            "有增长潜力客户": 54.44444444444444,
+            "流失风险客户": 35.36363636363637,
+            "高价值客户": 43.1
+          }
+        },
+        "high_value_customers_count": 10,
+        "high_value_customers_percentage": "24.39%",
+        "at_risk_customers_count": 11,
+        "at_risk_customers_percentage": "26.83%"
       },
-      "high_value_customer_profile": {
-        "平均年龄": 43.1,
-        "性别分布": {
-          "Male": 5,
-          "Female": 5
+      "customer_personas": {
+        "high_value_profile": {
+          "avg_age": 43.1,
+          "gender_distribution": {
+            "Male": 0.5,
+            "Female": 0.5
+          },
+          "avg_purchase_frequency": 4.2,
+          "avg_monetary_value": 285986.5122204631,
+          "avg_clv": 749305.7306088868,
+          "preferred_member_levels": {
+            "Gold": 0.5,
+            "Silver": 0.3,
+            "Bronze": 0.2
+          }
         },
-        "会员等级分布": {
-          "Gold": 5,
-          "Silver": 3,
-          "Bronze": 2
+        "segment_patterns": {
+          "有增长潜力客户": {
+            "avg_purchase_frequency_monthly": 2.6244250597634053,
+            "avg_recency": 50.77777777777778,
+            "avg_customer_lifecycle": 50.888888888888886
+          },
+          "高价值客户": {
+            "avg_purchase_frequency_monthly": 3.156187573221252,
+            "avg_recency": 21.1,
+            "avg_customer_lifecycle": 72.0
+          },
+          "流失风险客户": {
+            "avg_purchase_frequency_monthly": 1.1188811188811187,
+            "avg_recency": 84.0,
+            "avg_customer_lifecycle": 2.3636363636363638
+          },
+          "一般价值客户": {
+            "avg_purchase_frequency_monthly": 2.8389011186595177,
+            "avg_recency": 46.54545454545455,
+            "avg_customer_lifecycle": 25.181818181818183
+          }
         },
-        "平均购买频率": 4.2,
-        "平均消费金额": 285986.5122204631,
-        "平均CLV": 749305.7306088868,
-        "首次购买距今平均天数": 93.1
-      },
-      "customer_segments_behavior": {
-        "frequency": {
-          "流失风险客户": 1.0909090909090908,
-          "一般价值客户": 1.7272727272727273,
-          "有增长潜力客户": 3.0,
-          "高价值客户": 4.2
-        },
-        "monetary": {
-          "流失风险客户": 64014.402609395656,
-          "一般价值客户": 123472.69203322289,
-          "有增长潜力客户": 215747.75602390955,
-          "高价值客户": 285986.5122204631
-        },
-        "recency": {
-          "流失风险客户": 84.0,
-          "一般价值客户": 46.54545454545455,
-          "有增长潜力客户": 50.77777777777778,
-          "高价值客户": 21.1
-        },
-        "clv": {
-          "流失风险客户": 136274.83783044803,
-          "一般价值客户": 621994.4168585148,
-          "有增长潜力客户": 540170.0623428164,
-          "高价值客户": 749305.7306088868
-        },
-        "count": {
-          "流失风险客户": 11,
-          "一般价值客户": 11,
-          "有增长潜力客户": 9,
-          "高价值客户": 10
-        }
-      },
-      "customer_purchase_paths": {
-        "金牌客户": {
-          "平均首次购买距今天数": 103.36363636363636,
-          "平均购买频率(月)": 1.811756392518383,
-          "平均订单金额": 75109.21111726487,
-          "客户生命周期平均天数": 76.9090909090909,
-          "主要会员等级": "Bronze"
-        },
-        "银牌客户": {
-          "平均首次购买距今天数": 79.63636363636364,
-          "平均购买频率(月)": 2.4476088383720223,
-          "平均订单金额": 69568.39683546663,
-          "客户生命周期平均天数": 41.81818181818182,
-          "主要会员等级": "Bronze"
-        },
-        "铜牌客户": {
-          "平均首次购买距今天数": 84.61538461538461,
-          "平均购买频率(月)": 1.4665836188103396,
-          "平均订单金额": 67685.34911756523,
-          "客户生命周期平均天数": 5.384615384615385,
-          "主要会员等级": "Bronze"
-        },
-        "钻石客户": {
-          "平均首次购买距今天数": 78.66666666666667,
-          "平均购买频率(月)": 5.466450216450216,
-          "平均订单金额": 110548.65602519848,
-          "客户生命周期平均天数": 17.5,
-          "主要会员等级": "Bronze"
+        "marketing_strategies": {
+          "高价值客户": [
+            "个性化会员优惠: 提供定制化的高价值会员服务和专属优惠",
+            "专属客户经理: 指派专门的客户经理提供一对一服务",
+            "提前新品体验: 邀请参与新产品测试和提前购买",
+            "会员积分提升: 提供更高的积分倍率，增强忠诚度",
+            "高端社群活动: 组织高端客户专属线上线下活动"
+          ],
+          "有增长潜力客户": [
+            "精准促销活动: 基于历史购买记录推送相关优惠",
+            "积分激励计划: 设置阶梯式积分奖励，鼓励提升购买频率",
+            "会员等级提升: 提供明确的会员升级路径和福利",
+            "交叉销售策略: 推荐相关性高的产品组合",
+            "定期回访: 建立定期沟通机制，了解需求变化"
+          ],
+          "一般价值客户": [
+            "价值感知提升: 强调产品价值与价格优势",
+            "有限时间优惠: 创造紧迫感的限时折扣活动",
+            "满额礼品策略: 设置合理的满额送礼阈值",
+            "品类扩展: 引导尝试其他品类产品",
+            "数字化互动: 增加线上互动频率，提高品牌粘性"
+          ],
+          "流失风险客户": [
+            "重新激活邮件: 发送个性化的重新激活邮件",
+            "特别折扣: 提供一次性特别折扣",
+            "调查反馈: 了解客户流失原因",
+            "简化购买流程: 减少购买障碍",
+            "赢回策略: 设计专门的客户赢回营销活动"
+          ]
         }
       }
     }
@@ -109,47 +148,59 @@
   "artifacts": {
     "visualizations": {
       "clv_distribution": "output/figures/clv_distribution.png",
-      "rfm_segments_pie": "output/figures/rfm_segments_pie.png",
-      "customer_clusters_radar": "output/figures/customer_clusters_radar.png",
-      "frequency_monetary_clv": "output/figures/frequency_monetary_clv.png",
       "clv_by_member_level": "output/figures/clv_by_member_level.png",
-      "age_vs_clv": "output/figures/age_vs_clv.png"
+      "frequency_monetary_clv": "output/figures/frequency_monetary_clv.png",
+      "age_vs_clv": "output/figures/age_vs_clv.png",
+      "rfm_segments_pie": "output/figures/rfm_segments_pie.png",
+      "customer_clusters_radar": "output/figures/customer_clusters_radar.png"
     },
-    "code_examples": {
-      "rfm_analysis": "\n# RFM分析代码示例\ndef perform_rfm_analysis(customer_data):\n    # 计算RFM指标\n    rfm_df = customer_data.copy()\n    \n    # 1. Recency - 客户最近一次购买距今的天数\n    today = pd.to_datetime('today')\n    rfm_df['Recency'] = (today - rfm_df['last_purchase_date']).dt.days\n    \n    # 2. Frequency - 客户购买的总次数\n    # 假设已经计算\n    \n    # 3. Monetary - 客户消费的总金额\n    # 假设已经计算\n    \n    # 对RFM进行评分 (1-5分)\n    rfm_df['R_Score'] = pd.qcut(rfm_df['Recency'], 5, labels=[5, 4, 3, 2, 1])\n    rfm_df['F_Score'] = pd.qcut(rfm_df['Frequency'].rank(method=\"first\"), 5, labels=[1, 2, 3, 4, 5])\n    rfm_df['M_Score'] = pd.qcut(rfm_df['Monetary'].rank(method=\"first\"), 5, labels=[1, 2, 3, 4, 5])\n    \n    # 计算总RFM得分 (加权)\n    rfm_df['RFM_Score'] = (0.3 * rfm_df['R_Score'] + \n                           0.3 * rfm_df['F_Score'] + \n                           0.4 * rfm_df['M_Score'])\n    \n    # 客户分群\n    rfm_df['Customer_Segment'] = pd.qcut(rfm_df['RFM_Score'], 4, \n                                       labels=['流失风险客户', '一般价值客户', \n                                               '增长潜力客户', '高价值客户'])\n    \n    return rfm_df\n",
-      "clv_calculation": "\n# 客户生命周期价值计算代码示例\ndef calculate_clv(customer_data, discount_rate=0.1, time_horizon=24):\n    clv_df = customer_data.copy()\n    \n    # 1. 计算月均边际贡献\n    monthly_margin = clv_df['avg_monthly_spending'] * 0.6  # 假设60%是毛利\n    \n    # 2. 设定每个客户的预期留存率\n    retention_rates = {'Bronze': 0.7, 'Silver': 0.8, 'Gold': 0.9, 'Platinum': 0.95}\n    clv_df['retention_rate'] = clv_df['member_level'].map(retention_rates)\n    \n    # 3. 计算有限时间视野内的CLV\n    clv_values = []\n    \n    for idx, customer in clv_df.iterrows():\n        future_value = 0\n        for t in range(1, time_horizon + 1):\n            future_value += (customer['monthly_margin'] * \n                            (customer['retention_rate'] ** t) / \n                            ((1 + discount_rate/12) ** t))\n        \n        # 总CLV = 未来价值 - 获取成本 + 已实现价值\n        total_clv = future_value - 100 + customer['total_spending'] * 0.6\n        clv_values.append(total_clv)\n    \n    clv_df['CLV'] = clv_values\n    return clv_df\n"
+    "methodology": {
+      "clv_calculation": "使用预测模型计算CLV = (平均订单价值 × 购买频率 × 客户留存率) / (1 - 客户留存率)",
+      "customer_segmentation": "使用RFM方法(Recency, Frequency, Monetary)对客户进行分群，并结合K-means聚类",
+      "persona_building": "基于高价值客户特征和行为模式，构建客户画像和购买决策路径"
     },
-    "marketing_recommendations": {
+    "high_value_features": [
+      "高价值客户平均年龄为 43 岁",
+      "高价值客户男女比例为 50% : 50%",
+      "高价值客户平均购买频率为 4.2 次",
+      "高价值客户平均消费金额为 ¥285987 元",
+      "高价值客户平均CLV为 ¥749306 元"
+    ],
+    "marketing_strategies": {
       "高价值客户": [
-        "实施VIP奖励计划，提供专属优惠和服务",
-        "开发会员专属产品和限量版产品",
-        "定期举办高端客户答谢活动，增强品牌忠诚度",
-        "为高价值客户提供专属客户经理，提供一对一服务"
+        "个性化会员优惠: 提供定制化的高价值会员服务和专属优惠",
+        "专属客户经理: 指派专门的客户经理提供一对一服务",
+        "提前新品体验: 邀请参与新产品测试和提前购买",
+        "会员积分提升: 提供更高的积分倍率，增强忠诚度",
+        "高端社群活动: 组织高端客户专属线上线下活动"
       ],
       "有增长潜力客户": [
-        "提供阶梯式的升级激励，鼓励增加购买频率和金额",
-        "根据购买历史进行产品交叉销售和向上销售",
-        "设计会员积分加速计划，加速客户向高价值群体迁移",
-        "提供限时专属优惠，增加客户粘性"
+        "精准促销活动: 基于历史购买记录推送相关优惠",
+        "积分激励计划: 设置阶梯式积分奖励，鼓励提升购买频率",
+        "会员等级提升: 提供明确的会员升级路径和福利",
+        "交叉销售策略: 推荐相关性高的产品组合",
+        "定期回访: 建立定期沟通机制，了解需求变化"
       ],
       "一般价值客户": [
-        "定期推送个性化产品推荐，提高购买转化率",
-        "设计'首次尝试'促销活动，鼓励尝试新品类",
-        "实施适度的邮件营销和社交媒体互动",
-        "提供数量型优惠（如买二送一），提高单次购买量"
+        "价值感知提升: 强调产品价值与价格优势",
+        "有限时间优惠: 创造紧迫感的限时折扣活动",
+        "满额礼品策略: 设置合理的满额送礼阈值",
+        "品类扩展: 引导尝试其他品类产品",
+        "数字化互动: 增加线上互动频率，提高品牌粘性"
       ],
       "流失风险客户": [
-        "发送'我们想念你'电子邮件，附带特别回购优惠",
-        "进行客户调研，了解流失原因",
-        "提供免费试用或样品吸引客户回购",
-        "简化购买流程，降低再次购买的门槛"
+        "重新激活邮件: 发送个性化的重新激活邮件",
+        "特别折扣: 提供一次性特别折扣",
+        "调查反馈: 了解客户流失原因",
+        "简化购买流程: 减少购买障碍",
+        "赢回策略: 设计专门的客户赢回营销活动"
       ]
     }
   },
   "next_steps": [
-    "实施针对不同客户群的个性化营销策略",
-    "建立预测性客户流失模型",
-    "开发自动化客户细分系统",
-    "设计客户价值提升路径"
+    "实施针对不同客户群的营销策略",
+    "建立客户价值预测模型",
+    "优化客户生命周期管理流程",
+    "开发客户流失预警系统"
   ]
 }

@@ -3,7 +3,7 @@ from collections import defaultdict
 import logging
 import asyncio
 
-from core.base_interfaces import BaseChatInterface, ChatModeFactory
+from vendor.ag2_agent.core.base_interfaces import BaseChatInterface, ChatModeFactory
 
 logger = logging.getLogger(__name__)
 

@@ -1,0 +1,31 @@
+[
+  {
+    "id": "partial_files_task",
+    "name": "测试部分文件缺失情况",
+    "description": "这个任务故意只创建部分预期文件，以测试系统的错误处理",
+    "instruction": "这是一个测试任务，用于验证系统在部分文件缺失时的错误处理行为。\n\n请只创建以下文件：\n- results/partial_files_task/result.json\n\n请不要创建report.md和data.csv文件，以测试系统对部分文件缺失的处理能力。\n\nresult.json文件内容示例：\n```json\n{\n  \"task_id\": \"partial_files_task\",\n  \"success\": true,\n  \"message\": \"只创建了部分文件以测试系统行为\"\n}\n```",
+    "priority": "high",
+    "dependencies": [],
+    "output_files": {
+      "main_result": "results/partial_files_task/result.json",
+      "report": "results/partial_files_task/report.md",
+      "data": "results/partial_files_task/data.csv"
+    }
+  },
+  {
+    "id": "dependency_task",
+    "name": "依赖测试任务",
+    "description": "这个任务依赖于前一个任务的部分文件",
+    "instruction": "这个任务依赖于前一个任务创建的文件。\n\n请读取前一个任务的result.json文件，并尝试读取不存在的report.md和data.csv文件。\n\n请注意：由于某些文件可能不存在，在读取文件时需要进行异常处理。\n\n请创建一个包含读取结果的输出文件：\n- results/dependency_task/result.json",
+    "priority": "medium",
+    "dependencies": ["partial_files_task"],
+    "input_files": {
+      "prev_result": "partial_files_task:main_result",
+      "prev_report": "partial_files_task:report",
+      "prev_data": "partial_files_task:data"
+    },
+    "output_files": {
+      "main_result": "results/dependency_task/result.json"
+    }
+  }
+]

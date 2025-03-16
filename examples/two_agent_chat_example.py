@@ -18,7 +18,6 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
 
 from ag2_engine.ag2_executor import AG2Executor
-from ag2_engine.adapters.standard_llm_agent import StandardLLMAgent
 
 # Set up logging
 logging.basicConfig(
@@ -64,7 +63,7 @@ class HumanAgent:
 
 
 async def async_main():
-    """Run a demo of TwoAgentChat with StandardLLMAgent"""
+    """Run an interactive demo of TwoAgentChat with StandardLLMAgent"""
     
     # Set up detailed logging for debugging
     logging.basicConfig(
@@ -144,20 +143,63 @@ async def async_main():
     print("\n--- Starting Two-Agent Chat with StandardLLMAgent ---")
     print("Type 'exit' to end the conversation")
     
-    # Initiate the chat
-    response = await executor.execute_async(
-        "Hello! How can I help you today?", 
-        mode="two_agent",
-        agents={"user": "human", "assistant": "assistant"},
-        callbacks={
-            'response_received': print_message,
-            'message_sent': print_message
-        }
-    )
-    
-    print("\n--- Chat Summary ---")
-    print(f"Status: {response.get('status', 'unknown')}")
-    print("--- End of Demo ---\n")
+    # 交互式聊天循环
+    try:
+        # 初始消息
+        initial_prompt = "Hello! 你是谁？"
+        print("\nHuman> " + initial_prompt)  # 显示初始提示符和消息
+        
+        # 启动对话
+        chat_response = await executor.execute_async(
+            initial_prompt, 
+            mode="two_agent",
+            agents={"user": "human", "assistant": "assistant"},
+            callbacks={
+                'response_received': print_message,
+                'message_sent': print_message
+            }
+        )
+        
+        # 继续交互循环
+        turn_count = 1
+        max_turns = 10
+        
+        while turn_count < max_turns:
+            # 等待用户输入
+            print("\nHuman> ", end="", flush=True)
+            user_input = input()
+            
+            # 检查退出命令
+            if user_input.lower() in ('exit', 'quit', 'bye'):
+                print("\n用户请求退出对话")
+                break
+                
+            # 继续对话
+            try:
+                await executor.execute_async(
+                    user_input,
+                    mode="two_agent",
+                    agents={"user": "human", "assistant": "assistant"},
+                    callbacks={
+                        'response_received': print_message,
+                        'message_sent': print_message
+                    }
+                )
+            except Exception as e:
+                print(f"\n对话出错: {str(e)}")
+                continue
+                
+            turn_count += 1
+            
+    except KeyboardInterrupt:
+        print("\n用户中断，退出对话")
+    except Exception as e:
+        print(f"\n发生错误: {str(e)}")
+    finally:
+        # 结束总结
+        print("\n--- Chat Summary ---")
+        print(f"Turn Count: {turn_count}")
+        print("--- End of Demo ---\n")
 
 
 def main():

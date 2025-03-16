@@ -1,0 +1,33 @@
+{
+  "task_id": "test_task_id",
+  "success": true,
+  "result": {
+    "summary": "工具调用失败回退机制测试成功",
+    "details": "本次测试验证了系统在工具调用失败时的回退机制。测试涵盖了单次工具调用失败、多次工具调用失败以及API回退也失败的情况。系统表现与预期一致，在工具调用失败时能够正确回退到API调用方式继续执行任务。"
+  },
+  "artifacts": {
+    "test_script": "/home/wangbo/document/wangbo/task_planner/output/test_tool_fallback.py"
+  },
+  "test_results": [
+    {
+      "name": "test_tool_call_failure_fallback",
+      "status": "passed",
+      "description": "工具调用失败时成功回退到API调用"
+    },
+    {
+      "name": "test_multiple_tool_call_failures",
+      "status": "passed",
+      "description": "多次工具调用失败时仍能成功回退"
+    },
+    {
+      "name": "test_api_fallback_failure",
+      "status": "passed",
+      "description": "工具调用和API回退都失败时正确处理错误"
+    }
+  ],
+  "next_steps": [
+    "可以添加更复杂的异常场景测试",
+    "测试并发请求下的回退机制",
+    "测试超时场景下的回退处理"
+  ]
+}

@@ -1,0 +1,26 @@
+[
+  {
+    "id": "data_generator",
+    "name": "数据生成器",
+    "description": "创建一个示例数据集生成函数",
+    "instruction": "你是一位Python数据工程师，请创建一个名为data_generator.py的脚本，其中包含以下功能：\n\n1. 创建一个generate_data()函数，生成一个包含销售数据的pandas DataFrame\n2. 数据应包含以下列：date, product_id, category, region, sales_amount, units_sold\n3. 生成至少50行随机但合理的数据\n4. 确保数据分布在多个产品类别和地区\n5. 添加一个保存数据到CSV文件的功能\n\n请提供完整的Python脚本，并确保代码可以独立运行。",
+    "priority": "high",
+    "dependencies": []
+  },
+  {
+    "id": "data_analyzer",
+    "name": "数据分析器",
+    "description": "创建一个分析销售数据的函数",
+    "instruction": "你是一位Python数据分析师，请创建一个名为data_analyzer.py的脚本，用于分析由data_generator.py生成的销售数据。脚本应包含以下功能：\n\n1. 读取CSV文件中的销售数据\n2. 计算每个类别的总销售额和平均单价\n3. 找出销售额最高的地区\n4. 创建一个按日期的销售趋势分析\n5. 生成简单的统计摘要\n\n请确保代码清晰且有适当的注释。你可以假设输入数据具有以下列：date, product_id, category, region, sales_amount, units_sold。",
+    "priority": "medium",
+    "dependencies": ["data_generator"]
+  },
+  {
+    "id": "visualization",
+    "name": "数据可视化",
+    "description": "创建可视化销售数据的函数",
+    "instruction": "你是一位数据可视化专家，请创建一个名为visualizer.py的脚本，用于可视化销售数据分析结果。脚本应包含以下功能：\n\n1. 导入必要的库（matplotlib, seaborn等）\n2. 创建以下可视化图表：\n   - 按类别的销售额饼图\n   - 按地区的销售额条形图\n   - 销售趋势的时间序列图\n3. 保存生成的图表为PNG文件\n4. 添加适当的标题、标签和图例\n\n请确保代码与data_analyzer.py的输出兼容，并且可以作为独立模块运行或被导入使用。",
+    "priority": "low",
+    "dependencies": ["data_analyzer"]
+  }
+]

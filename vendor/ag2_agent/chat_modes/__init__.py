@@ -1,10 +1,10 @@
 """Chat mode implementations for the AG2-Agent framework."""
 
-from chat_modes.two_agent_chat import TwoAgentChat, TwoAgentChatFactory
-from chat_modes.sequential_chat import SequentialChat, SequentialChatFactory
-from chat_modes.group_chat import GroupChat, GroupChatFactory
-from chat_modes.nested_chat import NestedChat, NestedChatFactory
-from chat_modes.swarm import Swarm, SwarmFactory
+from vendor.ag2_agent.chat_modes.two_agent_chat import TwoAgentChat, TwoAgentChatFactory
+from vendor.ag2_agent.chat_modes.sequential_chat import SequentialChat, SequentialChatFactory
+from vendor.ag2_agent.chat_modes.group_chat import GroupChat, GroupChatFactory
+from vendor.ag2_agent.chat_modes.nested_chat import NestedChat, NestedChatFactory
+from vendor.ag2_agent.chat_modes.swarm import Swarm, SwarmFactory
 
 __all__ = [
     'TwoAgentChat',

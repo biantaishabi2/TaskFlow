@@ -12,6 +12,7 @@ from datetime import datetime
 from task_planner.core.context_management import ContextManager
 from task_planner.core.task_planner import TaskPlanner
 from task_planner.core.task_executor import TaskExecutor
+from task_planner.core.ag2_two_agent_executor import AG2TwoAgentExecutor
 from task_planner.util.claude_task_bridge import TaskClaudeBridge, TaskLLMBridge
 
 # 配置日志
@@ -30,16 +31,18 @@ logger = logging.getLogger('task_decomposition_system')
 class TaskDecompositionSystem:
     """任务拆分与执行系统主类，集成规划者和执行者"""
     
-    def __init__(self, logs_dir="logs"):
+    def __init__(self, logs_dir="logs", use_claude=False):
         """
         初始化任务拆分与执行系统
         
         参数:
             logs_dir (str): 日志和上下文存储目录
+            use_claude (bool): 是否使用Claude执行器，默认使用AG2
         """
         # 确保日志目录存在
         os.makedirs(logs_dir, exist_ok=True)
         self.logs_dir = logs_dir
+        self.use_claude = use_claude
         
         # 初始化上下文管理器
         self.context_manager = ContextManager()
@@ -48,7 +51,7 @@ class TaskDecompositionSystem:
         self.llm_bridge = TaskLLMBridge()
         self.claude_bridge = TaskClaudeBridge(llm_bridge=self.llm_bridge)
         
-        logger.info("任务拆分与执行系统已初始化")
+        logger.info(f"任务拆分与执行系统已初始化，使用{'Claude' if use_claude else 'AG2'}执行器")
         
     def execute_complex_task(self, task_description, save_results=True):
         """
@@ -90,10 +93,18 @@ class TaskDecompositionSystem:
         subtasks = planner.break_down_task(analysis)
         logger.info(f"任务拆分完成，共{len(subtasks)}个子任务")
         
-        # 创建执行者（内层循环）
-        executor = TaskExecutor(
-            context_manager=self.context_manager
-        )
+        # 根据配置创建执行者（内层循环）
+        if self.use_claude:
+            executor = TaskExecutor(
+                context_manager=self.context_manager,
+                claude_bridge=self.claude_bridge
+            )
+            logger.info("使用Claude执行器")
+        else:
+            executor = AG2TwoAgentExecutor(
+                context_manager=self.context_manager
+            )
+            logger.info("使用AG2执行器")
         
         # 执行每个子任务
         execution_start_time = time.time()

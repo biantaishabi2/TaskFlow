@@ -3,7 +3,7 @@ import yaml
 import json
 import os
 
-from core.base_interfaces import BaseChatInterface, ChatModeFactory
+from vendor.ag2_agent.core.base_interfaces import BaseChatInterface, ChatModeFactory
 
 
 class OrchestrationManager:

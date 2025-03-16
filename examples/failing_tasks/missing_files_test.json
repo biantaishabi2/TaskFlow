@@ -1,0 +1,31 @@
+[
+  {
+    "id": "test_task",
+    "name": "测试文件缺失情况",
+    "description": "这个任务故意设计成不创建文件，以测试系统的错误处理",
+    "instruction": "这是一个测试任务，用于验证系统在文件缺失时的错误处理行为。\n\n请注意：这个任务执行后**不要创建任何文件**，以测试系统的错误处理能力。\n\n请直接返回文本结果而不创建任何文件。",
+    "priority": "high",
+    "dependencies": [],
+    "output_files": {
+      "main_result": "results/test_task/result.json",
+      "report": "results/test_task/report.md",
+      "data": "results/test_task/data.csv"
+    }
+  },
+  {
+    "id": "follow_up_task",
+    "name": "后续依赖任务",
+    "description": "这个任务依赖于前一个任务的输出文件",
+    "instruction": "这个任务依赖于前一个任务的输出文件。请尝试读取前一个任务生成的文件，并创建一个新的结果文件。\n\n请注意：前一个任务可能没有创建文件，这会导致本任务执行失败。",
+    "priority": "medium",
+    "dependencies": ["test_task"],
+    "input_files": {
+      "prev_result": "test_task:main_result",
+      "prev_data": "test_task:data"
+    },
+    "output_files": {
+      "main_result": "results/follow_up/result.json",
+      "report": "results/follow_up/report.md"
+    }
+  }
+]

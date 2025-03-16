@@ -1,0 +1,42 @@
+[
+  {
+    "id": "requirements_analysis",
+    "name": "需求分析",
+    "description": "分析计算器应用的功能需求",
+    "instruction": "你是一位软件需求分析师，请为一个命令行计算器应用分析需求。\n\n这个计算器应该支持以下功能：\n1. 基本算术运算（加、减、乘、除）\n2. 支持括号和运算优先级\n3. 支持科学计算功能（平方、平方根、三角函数等）\n4. 支持历史记录功能\n5. 支持用户自定义变量\n\n请提供以下内容：\n1. 详细的功能需求分析\n2. 主要用例描述\n3. 技术选型建议\n4. 系统架构建议\n5. 推荐的模块划分",
+    "priority": "high",
+    "dependencies": []
+  },
+  {
+    "id": "core_implementation",
+    "name": "核心功能实现",
+    "description": "实现计算器的核心计算功能",
+    "instruction": "你是一位Python开发工程师，需要实现一个命令行计算器的核心功能模块。\n\n根据需求分析，请实现以下功能：\n1. 设计并实现一个表达式解析器，支持基本算术运算和括号\n2. 实现科学计算功能（平方、平方根、三角函数等）\n3. 设计并实现模块化的代码结构\n\n请提供完整的Python代码实现，包括必要的类、方法和函数。确保代码结构清晰，有适当的注释，并遵循Python的PEP 8编码规范。",
+    "priority": "high",
+    "dependencies": ["requirements_analysis"]
+  },
+  {
+    "id": "user_interface",
+    "name": "用户界面实现",
+    "description": "实现计算器的命令行用户界面",
+    "instruction": "你是一位Python UI开发工程师，需要为命令行计算器实现用户界面。\n\n根据需求分析和已完成的核心计算模块，请实现以下功能：\n1. 设计并实现命令行交互界面\n2. 实现用户输入解析和处理\n3. 实现结果显示和格式化\n4. 实现用户帮助和错误处理\n\n请提供完整的Python代码实现，确保与核心计算模块良好集成。代码应当具有良好的用户体验和错误处理能力。",
+    "priority": "medium",
+    "dependencies": ["core_implementation"]
+  },
+  {
+    "id": "history_variables",
+    "name": "历史记录和变量功能",
+    "description": "实现计算器的历史记录和变量存储功能",
+    "instruction": "你是一位Python开发工程师，需要为命令行计算器实现历史记录和变量存储功能。\n\n根据需求分析和已完成的模块，请实现以下功能：\n1. 设计并实现历史记录存储和查询功能\n2. 实现用户自定义变量的创建、存储和使用\n3. 提供变量和历史记录的列表、清除功能\n\n请提供完整的Python代码实现，确保与已有模块良好集成。代码应当具有合理的存储机制和用户友好的接口。",
+    "priority": "medium",
+    "dependencies": ["core_implementation"]
+  },
+  {
+    "id": "testing_documentation",
+    "name": "测试和文档",
+    "description": "编写计算器应用的测试用例和用户文档",
+    "instruction": "你是一位软件测试工程师和技术文档撰写者，需要为命令行计算器应用编写测试用例和文档。\n\n根据已完成的所有功能模块，请提供以下内容：\n1. 编写单元测试用例，覆盖所有主要功能\n2. 编写集成测试用例，确保模块间协同工作正常\n3. 编写用户使用手册，包括安装指南、功能说明和示例\n4. 编写开发者文档，包括代码结构、API说明和扩展指南\n\n请提供完整的测试代码和文档内容，确保测试全面且文档清晰易懂。",
+    "priority": "low",
+    "dependencies": ["user_interface", "history_variables"]
+  }
+]

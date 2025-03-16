@@ -1,0 +1,55 @@
+[
+  {
+    "id": "data_prep",
+    "name": "数据预处理",
+    "description": "准备数据分析所需的数据集",
+    "instruction": "你是一位数据分析师，需要完成数据预处理工作。\n请执行以下数据预处理任务:\n\n1. 读取CSV数据 (这里模拟这个过程)\n   - 假设数据包含以下字段：日期、产品ID、产品名称、类别、销售量、单价、区域\n\n2. 数据清洗\n   - 处理缺失值：对销售量和单价的缺失值进行均值填充\n   - 处理异常值：识别并处理销售量异常高或低的记录\n   - 格式化日期字段为标准格式\n\n3. 数据转换\n   - 创建新的'销售额'字段 = 销售量 × 单价\n   - 提取日期的年、月、周等信息作为新特征\n   - 对类别和区域字段进行编码\n\n请创建以下文件:\n1. 数据预处理文档 'data_preprocessing.md'：包含预处理流程描述和遇到的问题\n2. 数据处理代码 'data_preprocessing.py'：包含完整的数据处理代码\n3. 数据处理流程图 'preprocessing_flowchart.png'：可视化展示处理流程\n\n重要：你必须实际创建这些文件，不要只是描述它们。在回复中明确指出你已创建的每个文件的路径和内容摘要。",
+    "priority": "high",
+    "dependencies": [],
+    "output_files": {
+      "main_result": "data_preprocessing.md",
+      "code": "data_preprocessing.py",
+      "flowchart": "preprocessing_flowchart.png"
+    }
+  },
+  {
+    "id": "sales_analysis",
+    "name": "销售分析",
+    "description": "分析销售数据的趋势和模式",
+    "instruction": "作为数据分析师，你需要对预处理完成的销售数据进行全面分析。\n\n请阅读data_preprocessing.md和data_preprocessing.py文件，基于之前的预处理结果进行销售分析。\n\n请执行以下销售分析任务:\n\n1. 计算基本统计指标\n   - 总销售额、平均订单金额\n   - 各产品类别的销售占比\n   - 不同区域的销售表现\n\n2. 时间维度分析\n   - 按月度/季度/年度的销售趋势\n   - 识别销售的周期性模式\n   - 同比/环比增长率计算\n\n3. 产品与区域分析\n   - 表现最好/最差的产品类别\n   - 各区域销售差异及原因分析\n   - 产品组合分析\n\n请创建以下文件:\n1. 销售分析报告 'sales_analysis.md'：包含分析方法、关键发现和业务建议\n2. 销售分析代码 'sales_analysis.py'：包含所有分析和可视化代码\n3. 销售趋势图 'sales_trend.png'：展示时间维度的销售趋势\n4. 品类占比图 'category_share.png'：展示不同产品类别的销售占比\n5. 区域销售图 'region_sales.png'：展示不同区域的销售表现\n\n重要：你必须实际创建上述所有文件，并确保图表可以在报告中正确引用。请在回复中列出已创建的所有文件路径。",
+    "priority": "medium",
+    "dependencies": ["data_prep"],
+    "output_files": {
+      "main_result": "sales_analysis.md",
+      "code": "sales_analysis.py",
+      "trend_chart": "sales_trend.png",
+      "category_chart": "category_share.png", 
+      "region_chart": "region_sales.png"
+    }
+  },
+  {
+    "id": "customer_analysis",
+    "name": "客户分析",
+    "description": "分析客户价值和行为特征",
+    "instruction": "作为客户分析专家，你需要基于销售数据分析客户价值和行为特征。\n\n请阅读data_preprocessing.md、data_preprocessing.py、sales_analysis.md和sales_analysis.py文件，基于之前的分析结果进行客户分析。\n\n请执行以下客户分析任务:\n\n1. 客户生命周期价值(CLV)计算\n   - 定义客户获取成本和客户维系成本\n   - 计算客户平均购买频率和客户留存率\n   - 估算客户终身价值\n\n2. 客户细分\n   - 基于购买频率、金额、最近一次购买时间(RFM分析)进行客户分群\n   - 识别高价值客户、有增长潜力客户和流失风险客户\n   - 分析不同客户群的购买行为特征\n\n3. 客户画像构建\n   - 识别高价值客户的共同特征\n   - 分析客户购买路径和决策因素\n   - 提出个性化营销建议\n\n请创建以下文件:\n1. 客户分析报告 'customer_analysis.md'：包含分析方法论和策略建议\n2. 客户分析代码 'customer_analysis.py'：包含分析和可视化代码\n3. 客户细分图 'customer_segments.png'：展示RFM客户分群矩阵\n4. 客户价值图 'customer_value.png'：展示客户生命周期价值分布\n\n重要：必须实际创建上述所有文件，并在分析报告中正确引用图表。在回复中请提供已创建文件的路径列表。",
+    "priority": "medium", 
+    "dependencies": ["data_prep", "sales_analysis"],
+    "output_files": {
+      "main_result": "customer_analysis.md",
+      "code": "customer_analysis.py",
+      "segment_chart": "customer_segments.png",
+      "value_chart": "customer_value.png"
+    }
+  },
+  {
+    "id": "final_report",
+    "name": "综合分析报告",
+    "description": "根据前三个任务的分析结果，生成全面的业务分析报告",
+    "instruction": "作为数据科学团队负责人，你需要基于已完成的数据预处理、销售分析和客户分析结果，制作一份全面的业务分析报告。\n\n请仔细阅读以下文件的内容：\n- data_preprocessing.md\n- sales_analysis.md\n- customer_analysis.md\n\n并查看所有生成的图表：\n- preprocessing_flowchart.png\n- sales_trend.png\n- category_share.png\n- region_sales.png\n- customer_segments.png\n- customer_value.png\n\n请完成以下工作:\n\n1. 回顾并综合三个阶段的关键结果\n   - 数据预处理的主要发现和挑战\n   - 销售分析的核心洞察\n   - 客户分析的关键结论\n\n2. 策略建议\n   - 销售策略优化建议\n   - 客户关系管理改进方案\n   - 产品组合调整建议\n\n3. 行动计划\n   - 优先行动项目和预期效果\n   - 实施路线图和时间表\n   - 关键绩效指标(KPI)设定\n\n请创建一个名为'业务分析综合报告.md'的Markdown文件，此文件必须包含:\n1. 结构清晰的目录\n2. 图表引用（使用相对路径正确引用上述所有图表）\n3. 核心数据摘要表格\n4. 执行摘要和详细分析部分\n5. 具体可行的业务建议\n\n重要：你必须实际创建'业务分析综合报告.md'文件，确保所有图表引用都能正确显示，并包含所有前面任务的关键发现。在回复中提供已创建文件的路径和基本内容摘要。",
+    "priority": "high", 
+    "dependencies": ["data_prep", "sales_analysis", "customer_analysis"],
+    "output_files": {
+      "main_result": "业务分析综合报告.md"
+    }
+  }
+]

@@ -3,22 +3,39 @@ AG2-Agent LLM Configuration Adapter Module
 
 This module provides classes to adapt external LLM services to AG2-Agent's
 configuration requirements.
+
+DEPRECATION NOTICE: ExternalLLMConfig is deprecated and will be removed in a future version.
+                    Please use the standard AG2 config_list format with StandardLLMAgent instead.
 """
 
 from typing import Dict, Any, Optional, List, Union, Callable
 import logging
 import asyncio
 import inspect
+import warnings
 
 logger = logging.getLogger(__name__)
 
 
 class ExternalLLMConfig:
     """
-    Configuration adapter for external LLM services.
+    DEPRECATED: Configuration adapter for external LLM services.
     
-    This class enables the use of external LLM services with AG2-Agent by providing
-    a compatible configuration interface.
+    This class is deprecated and will be removed in future versions.
+    Please use StandardLLMAgent with standard AG2 config_list format instead.
+    
+    Example of recommended standard config:
+    ```python
+    llm_config = {
+        "config_list": [
+            {
+                "api_type": "openai",
+                "model": "gpt-4o",
+                "api_key": os.environ["OPENAI_API_KEY"]
+            }
+        ]
+    }
+    ```
     """
     
     def __init__(self, 
@@ -29,12 +46,22 @@ class ExternalLLMConfig:
         """
         Initialize the external LLM configuration.
         
+        DEPRECATED: This class is deprecated. Please use StandardLLMAgent with
+                    standard AG2 config_list format instead.
+        
         Args:
             llm_service: An instance of an external LLM service
             model_name: Identifier for the model
             temperature: Temperature setting for generation
             max_tokens: Maximum tokens to generate
         """
+        warnings.warn(
+            "ExternalLLMConfig is deprecated and will be removed in future versions. "
+            "Please use StandardLLMAgent with standard AG2 config_list format instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        
         self.llm_service = llm_service
         self.model_name = model_name
         self.temperature = temperature
