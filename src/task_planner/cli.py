@@ -6,6 +6,14 @@ import importlib.util
 import time
 import json
 from datetime import datetime
+import logging
+
+# 配置日志
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('task_planner_cli')
 
 # 这个函数用于动态导入模块
 def import_module_from_path(module_name, file_path):
@@ -165,6 +173,9 @@ def main():
                                 default='logs')
     subtasks_parser.add_argument('--use-claude', action='store_true',
                                 help='使用Claude作为执行器(默认使用AG2)')
+    subtasks_parser.add_argument('--start-from', 
+                                help='指定从哪个子任务ID开始执行',
+                                default=None)
     
     args = parser.parse_args()
     
@@ -175,25 +186,12 @@ def main():
         # 导入API服务器模块
         sys.path.insert(0, base_dir)
         from task_planner.server.task_api_server import app
-        import logging
 
         # 确保日志目录存在
         os.makedirs(args.logs_dir, exist_ok=True)
         
-        # 配置日志
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.StreamHandler(),
-                logging.FileHandler(os.path.join(args.logs_dir, 'task_api_server.log'))
-            ]
-        )
-        logger = logging.getLogger('task_api_server')
-        
         # 启动API服务器
         print(f"启动任务API服务器，端口: {args.port}")
-        logger.info(f"启动任务API服务器，端口: {args.port}")
         app.run(host='0.0.0.0', port=args.port)
             
     elif args.command == 'visualization':
@@ -343,55 +341,44 @@ def main():
     
     elif args.command == 'run-subtasks':
         try:
-            # 动态导入需要的模块
-            sys.path.insert(0, base_dir)
-            from task_planner.core.task_decomposition_system import TaskDecompositionSystem
-            import json
-            
-            # 确保日志目录存在
-            log_dir = os.path.join(os.getcwd(), args.logs_dir, "subtasks_execution")
-            os.makedirs(log_dir, exist_ok=True)
-            
-            # 读取子任务定义文件
+            # 读取子任务文件
             with open(args.subtasks_file, 'r', encoding='utf-8') as f:
                 subtasks = json.load(f)
                 
-            print("="*50)
-            print("预定义子任务执行")
-            print("="*50)
-            print(f"从文件加载了 {len(subtasks)} 个子任务")
-            print(f"使用{'Claude' if args.use_claude else 'AG2'}执行器")
+            # 如果指定了起始任务
+            if args.start_from:
+                # 找到起始任务的索引
+                start_index = next((i for i, task in enumerate(subtasks) 
+                                  if task['id'] == args.start_from), None)
+                if start_index is None:
+                    logger.error(f"找不到指定的起始任务ID: {args.start_from}")
+                    return 1
+                # 只执行从该任务开始的子任务
+                subtasks = subtasks[start_index:]
+                logger.info(f"从任务 {args.start_from} 开始执行，共 {len(subtasks)} 个任务")
             
-            # 初始化任务拆分系统
+            # 执行子任务
             system = TaskDecompositionSystem(
                 logs_dir=args.logs_dir,
                 use_claude=args.use_claude
             )
+            final_result = system.execute_predefined_subtasks(subtasks)
             
-            # 执行任务
-            result = system.execute_complex_task({
-                'type': 'subtasks_execution',
-                'subtasks': subtasks
-            })
+            # 输出结果摘要
+            print("\n执行结果摘要:")
+            print(f"总子任务数: {len(subtasks)}")
+            print(f"成功: {final_result['success_count']}")
+            print(f"失败: {final_result['failure_count']}")
+            print(f"最终状态: {'成功' if final_result['success'] else '失败'}")
             
-            # 保存执行结果
-            results_file = os.path.join(log_dir, f"execution_results_{int(datetime.now().timestamp())}.json")
-            with open(results_file, "w", encoding="utf-8") as f:
-                json.dump(result, f, ensure_ascii=False, indent=2)
+            return 0
             
-            print(f"\n执行结果已保存到: {results_file}")
-            print("\n执行完成")
-            print("="*50)
-            
-        except ImportError as e:
-            print(f"Error: 无法导入必要的模块: {e}")
-        except FileNotFoundError:
-            print(f"Error: 找不到任务定义文件: {args.subtasks_file}")
-        except json.JSONDecodeError:
-            print(f"Error: 任务定义文件不是有效的JSON格式: {args.subtasks_file}")
+        except Exception as e:
+            logger.error(f"子任务执行失败: {str(e)}")
+            return 1
     
     else:
         parser.print_help()
         
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

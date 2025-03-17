@@ -22,7 +22,7 @@ logger = logging.getLogger('task_planner')
 class TaskPlanner:
     """任务规划者类，负责复杂任务的分析、拆分和协调"""
     
-    def __init__(self, task_description, context_manager=None, logs_dir="logs"):
+    def __init__(self, task_description, context_manager=None, logs_dir="logs", skip_analysis=False):
         """
         初始化任务规划者
         
@@ -30,8 +30,20 @@ class TaskPlanner:
             task_description (str): 任务描述
             context_manager (ContextManager, optional): 上下文管理器
             logs_dir (str): 日志目录
+            skip_analysis (bool): 是否跳过分析
         """
-        self.task_description = task_description
+        # 统一处理任务描述格式
+        if isinstance(task_description, dict):
+            self.full_description = task_description
+            self.task_description = task_description.get('description', '')
+        else:
+            self.task_description = str(task_description)
+            self.full_description = {'description': self.task_description}
+
+        logger.info(
+            f"创建任务: {self.task_description[:100]}{'...' if len(self.task_description) > 100 else ''}"
+        )
+        
         self.subtasks = []
         self.current_index = 0
         self.results = {}
@@ -61,10 +73,17 @@ class TaskPlanner:
         # 记录任务创建
         self.plan_context.add_execution_record(
             'task_created',
-            f"创建任务: {task_description[:100]}{'...' if len(task_description) > 100 else ''}",
-            {'full_description': task_description}
+            f"创建任务: {self.task_description[:100]}{'...' if len(self.task_description) > 100 else ''}",
+            {'full_description': self.full_description}
         )
-        logger.info(f"任务规划者已初始化，任务描述: {task_description[:50]}...")
+        logger.info(f"任务规划者已初始化，任务描述: {self.task_description[:50]}...")
+        
+        self.skip_analysis = skip_analysis  # 新增跳过分析标志
+        
+        if not self.skip_analysis:  # 控制是否执行分析
+            self.analysis_result = self.analyze_task()
+        else:
+            self.analysis_result = {"status": "predefined"}
         
     def analyze_task(self):
         """
@@ -152,14 +171,18 @@ class TaskPlanner:
         
     def break_down_task(self, analysis=None):
         """
-        将任务分解为小任务
+        将任务拆分为子任务
         
         参数:
-            analysis (dict, optional): 任务分析结果，如果为None则使用存储的分析
+            analysis (dict, optional): 任务分析结果
             
         返回:
-            list: 小任务列表
+            list: 子任务列表
         """
+        if self.skip_analysis:  # 直接返回预定义子任务
+            logger.info("跳过任务拆分，使用预定义子任务")
+            return self.subtasks
+            
         logger.info("开始任务拆分...")
         
         # 如果未提供分析，使用存储的分析

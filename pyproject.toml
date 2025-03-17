@@ -1,15 +1,34 @@
 [build-system]
-requires = ["setuptools>=42", "wheel"]
+requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "task_planner_system"
+name = "task-planner-system"
 version = "0.1"
 description = "任务规划与执行系统"
+readme = "README.md"
 requires-python = ">=3.8"
-authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+dependencies = [
+    "pexpect >=4.8",
+    "distro >=1.8",
+    "google-generativeai >=0.3",
 ]
+
+[project.scripts]
+task-planner = "task_planner.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["task_planner*"]
+exclude = ["tests*", "examples*"]
+
+[tool.setuptools.package-data]
+"*" = ["*.txt", "*.json", "*.md"]
+"task_planner" = ["**/*.py", "**/*.yaml"]
 
 [tool.pytest]
 testpaths = ["tests"]

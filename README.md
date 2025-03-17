@@ -43,38 +43,69 @@ pip install -e .
 ```bash
 # 查看帮助信息
 task-planner --help
-
-# 运行可视化服务器
-task-planner visualization --port 8080 --api-url http://localhost:5000
-
-# 运行分布式系统
-task-planner distributed --mode master --api-port 5000 --task "复杂任务描述"
 ```
 
-> 注意：新增的子命令需要额外安装一次才能生效:
->
-> ```bash
-> # 重新安装更新CLI命令
-> pip install -e .
-> 
-> # 然后可以使用新增的命令
-> # 执行单个任务
-> task-planner execute "设计一个简单的Python网站内容管理系统"
-> task-planner execute -f task.txt --logs-dir custom_logs
-> 
-> # 使用Claude执行器（默认使用AG2执行器）
-> task-planner execute "创建数据分析报告" --use-claude
-> 
-> # 仅进行任务规划
-> task-planner plan "设计一个数据分析流程" 
-> task-planner plan -f task.txt --output custom_output
-> 
-> # 执行已拆分的多个子任务（不进行规划）
-> task-planner run-subtasks -f subtasks.json --logs-dir custom_logs
-> 
-> # 使用Claude执行器运行子任务（默认使用AG2执行器）
-> task-planner run-subtasks subtasks.json --use-claude
-> ```
+系统提供以下主要子命令：
+
+| 命令          | 描述                   | 示例                                 |
+|---------------|------------------------|--------------------------------------|
+| plan          | 分析并规划任务         | `task-planner plan "任务描述"`        |
+| run-task      | 执行新任务             | `task-planner run-task "任务描述"`    |
+| run-subtasks  | 执行预定义子任务文件   | `task-planner run-subtasks tasks.json`|
+| resume        | 恢复已存在任务         | `task-planner resume task_123456`     |
+
+#### 1. 分析和规划任务
+```bash
+task-planner plan [任务描述|文件路径] [选项]
+
+# 示例：
+# 分析任务并输出规划结果
+task-planner plan "设计一个数据分析流程"
+
+# 从文件读取任务并指定输出目录
+task-planner plan task.txt --file --output custom_output
+
+# 生成详细的任务分析报告
+task-planner plan "开发网站后端API" --detailed
+```
+
+#### 2. 执行新任务
+```bash
+task-planner run-task [任务描述|文件路径] [选项]
+
+# 示例：
+task-planner run-task "开发一个命令行计算器应用"
+task-planner run-task task.json --file
+```
+
+#### 3. 执行预定义子任务
+```bash
+task-planner run-subtasks [子任务文件路径] [选项]
+
+# 示例：
+task-planner run-subtasks examples/demo_subtasks/code_subtasks.json
+task-planner run-subtasks my_tasks.json --logs-dir custom_logs --use-claude
+
+# 从指定子任务开始执行
+task-planner run-subtasks my_tasks.json --start-from task_id
+
+# 设置执行超时时间（默认500秒）
+task-planner run-subtasks my_tasks.json --timeout 600
+```
+
+子任务执行支持以下选项：
+- `--start-from TASK_ID`: 指定从哪个子任务开始执行
+- `--timeout SECONDS`: 设置任务执行超时时间（默认500秒）
+- `--logs-dir DIR`: 指定日志输出目录
+- `--use-claude`: 使用Claude执行器而不是默认的AG2执行器
+
+#### 4. 恢复任务
+```bash
+task-planner resume [任务ID] [选项]
+
+# 示例：
+task-planner resume task_1689321456 --logs-dir custom_logs
+```
 
 #### 执行器选择
 
@@ -93,10 +124,51 @@ task-planner distributed --mode master --api-port 5000 --task "复杂任务描�
 
 ```bash
 # 使用Claude执行器
-task-planner execute "创建数据分析报告" --use-claude --logs-dir analysis_logs
+task-planner run-task "创建数据分析报告" --use-claude
 
 # 使用默认的AG2执行器
-task-planner execute "创建数据分析报告" --logs-dir analysis_logs
+task-planner run-task "创建数据分析报告"
+```
+
+#### 预定义子任务格式
+
+子任务文件应为JSON数组，示例：
+```json
+[
+  {
+    "id": "requirements_analysis",
+    "name": "需求分析",
+    "description": "分析计算器应用需求",
+    "instruction": "作为需求分析师，请分析...",
+    "priority": "high",
+    "dependencies": [],
+    "output_files": {
+      "main_result": "output/task1/result.json",
+      "code_file": "output/task1/implementation.py"
+    },
+    "success_criteria": [
+      "代码文件被成功创建",
+      "代码符合PEP8规范"
+    ],
+    "timeout": 500
+  },
+  {
+    "id": "core_implementation",
+    "name": "核心功能实现",
+    "description": "实现计算器核心功能",
+    "instruction": "作为Python开发工程师，请实现...",
+    "dependencies": ["requirements_analysis"],
+    "output_files": {
+      "main_result": "output/task2/result.json",
+      "test_file": "output/task2/test_implementation.py"
+    },
+    "success_criteria": [
+      "测试通过"
+    ],
+    "timeout": 500,
+    "priority": "high"
+  }
+]
 ```
 
 #### 输出和日志
@@ -335,7 +407,9 @@ docker run -p 5000:5000 -p 8080:8080 task-planner
     "success_criteria": [
       "代码文件被成功创建",
       "代码符合PEP8规范"
-    ]
+    ],
+    "timeout": 500,
+    "priority": "high"
   },
   {
     "id": "task2",
@@ -346,7 +420,12 @@ docker run -p 5000:5000 -p 8080:8080 task-planner
     "output_files": {
       "main_result": "output/task2/result.json",
       "test_file": "output/task2/test_implementation.py"
-    }
+    },
+    "success_criteria": [
+      "测试通过"
+    ],
+    "timeout": 500,
+    "priority": "high"
   }
 ]
 ```
@@ -411,8 +490,8 @@ export TASK_PLANNER_LOGS_DIR="custom_logs"
 # 默认上下文目录
 export TASK_PLANNER_CONTEXT_DIR="custom_context"
 
-# 执行超时设置（秒）
-export TASK_EXECUTOR_TIMEOUT="600"
+# 执行超时设置（秒，默认500秒）
+export TASK_EXECUTOR_TIMEOUT="500"
 ```
 
 ### 配置文件
@@ -434,7 +513,7 @@ api:
     api_key: "your_gemini_api_key"
 
 execution:
-  default_timeout: 600
+  default_timeout: 500  # 默认执行超时时间（秒）
   logs_dir: "custom_logs"
   context_dir: "custom_context"
   
