@@ -1,30 +1,26 @@
 from setuptools import setup, find_packages
+import site
+import sys
+
+# 添加用户特定的site-packages路径
+site.ENABLE_USER_SITE = True
 
 setup(
-    name="task_planner",
-    version="0.1.0",
-    packages=find_packages(where="src"),
+    name="task-planner-system",
+    version="0.1",
     package_dir={"": "src"},
-    include_package_data=True,
+    packages=find_packages(where="src"),
     install_requires=[
-        "flask",
-        "werkzeug",
-        "requests",
-        "plotly",
-        "pandas",
-        "psutil",
+        'pydantic>=2.0',
+        'pyautogen>=0.2.0'
     ],
-    python_requires=">=3.6",
     entry_points={
-        "console_scripts": [
-            "task-planner=task_planner.cli:main",
+        'console_scripts': [
+            'task-planner=task_planner.cli:main',
         ],
     },
-    author="Wang Bo",
-    description="任务拆分与执行系统",
-    classifiers=[
-        "Programming Language :: Python :: 3",
-        "License :: OSI Approved :: MIT License",
-        "Operating System :: OS Independent",
-    ],
+    # 添加这些选项来确保正确的安装位置
+    python_requires='>=3.8',
+    zip_safe=False,
+    include_package_data=True,
 )

@@ -2,5 +2,14 @@
 requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "task_planner_system"
+version = "0.1"
+description = "任务规划与执行系统"
+requires-python = ">=3.8"
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+
 [tool.pytest]
 testpaths = ["tests"]
