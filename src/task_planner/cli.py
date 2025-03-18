@@ -341,6 +341,11 @@ def main():
     
     elif args.command == 'run-subtasks':
         try:
+            # 动态导入需要的模块
+            sys.path.insert(0, base_dir)
+            from task_planner.core.task_decomposition_system import TaskDecompositionSystem
+            import json
+            
             # 读取子任务文件
             with open(args.subtasks_file, 'r', encoding='utf-8') as f:
                 subtasks = json.load(f)
