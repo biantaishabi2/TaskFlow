@@ -1,0 +1,10 @@
+Flask==2.3.3
+Flask-WTF==1.1.1
+Flask-SQLAlchemy==3.0.5
+Flask-Migrate==4.0.4
+Flask-Login==0.6.2
+python-dotenv==1.0.0
+Werkzeug==2.3.7
+Jinja2==3.1.2
+pytest==7.4.0
+gunicorn==21.2.0

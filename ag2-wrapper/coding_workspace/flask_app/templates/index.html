@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} | Flask App{% endblock %}
+
+{% block content %}
+<section class="container">
+    <h1>Welcome to Flask App</h1>
+    <p>This is a sample Flask application with a standard project structure.</p>
+    
+    {% if title == 'About' %}
+    <h2>About This Project</h2>
+    <p>This application demonstrates a Flask project following best practices:</p>
+    <ul>
+        <li>Organized project structure</li>
+        <li>Blueprints for modular code</li>
+        <li>Proper configuration handling</li>
+        <li>Template inheritance</li>
+    </ul>
+    {% else %}
+    <h2>Get Started</h2>
+    <p>Visit the <a href="{{ url_for('main.about') }}">About page</a> to learn more about this project.</p>
+    {% endif %}
+</section>
+{% endblock %}

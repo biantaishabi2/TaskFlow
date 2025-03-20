@@ -1,0 +1,8 @@
+[
+    {
+        "model": "anthropic/claude-3.7-sonnet",
+        "api_key": "${OPENROUTER_API_KEY}",
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_type": "openai"
+    }
+] 
