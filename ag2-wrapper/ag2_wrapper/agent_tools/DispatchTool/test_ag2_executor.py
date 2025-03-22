@@ -54,15 +54,9 @@ async def main():
         prompt = """
         请帮我测试以下功能：
 
-        1. 列出/home/wangbo/document/wangbo/dev/webhook目录的内容
-
-        2. 使用grep工具在/home/wangbo/document/wangbo/dev/webhook目录中搜索：
-           - 搜索模式: "test"
-           - 搜索路径: /home/wangbo/document/wangbo/dev/webhook
-           - 文件类型: *.py
-
-        3. 读取该目录下的README.md文件内容
-
+        1. 列出该目录/home/wangbo/document/wangbo/dev/webhook下的文件
+        2. 用grep命令搜索README.md文件中包含"test"的行
+        3. 读取README.md文件内容
         4. 在README.md文件最后添加一行内容："test"
 
         请执行每个步骤并告诉我执行结果。
