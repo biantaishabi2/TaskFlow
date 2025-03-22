@@ -32,7 +32,7 @@
 ```bash
 # 从源码安装
 git clone git@github.com:biantaishabi2/TaskFlow.git
-cd task_planner
+cd TaskFlow
 pip install -e .
 ```
 
