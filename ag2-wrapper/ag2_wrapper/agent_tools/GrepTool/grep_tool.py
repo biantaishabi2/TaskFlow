@@ -80,13 +80,16 @@ class GrepTool(BaseTool):
     def _check_search_permission(self, path: Path) -> Tuple[bool, str]:
         """检查搜索权限，返回 (是否有权限, 错误消息)"""
         if not path.exists():
-            return False, f"目录不存在: {str(path)}"
+            return False, f"路径不存在: {str(path)}"
             
-        if not path.is_dir():
-            return False, f"路径不是目录: {str(path)}"
+        # 如果是文件，使用其所在目录
+        if path.is_file():
+            path = path.parent
+        elif not path.is_dir():
+            return False, f"路径既不是文件也不是目录: {str(path)}"
             
         if not os.access(path, os.R_OK):
-            return False, f"无权限读取目录: {str(path)}"
+            return False, f"无权限读取路径: {str(path)}"
             
         return True, ""
         
@@ -172,6 +175,10 @@ class GrepTool(BaseTool):
         
     async def execute(self, params: Dict[str, Any]) -> ToolCallResult:
         """执行文件内容搜索"""
+        # 处理参数，支持直接传参和kwargs包装的情况
+        if "kwargs" in params:
+            params = params["kwargs"]
+            
         # 验证参数
         is_valid, error_msg = self.validate_parameters(params)
         if not is_valid:
@@ -207,11 +214,18 @@ class GrepTool(BaseTool):
                 
             # 执行ripgrep搜索
             try:
+                # 如果search_path是文件，使用其所在目录
+                search_dir = str(search_path.parent if search_path.is_file() else search_path)
                 matches = self._run_ripgrep(
                     params["pattern"],
-                    str(search_path),
+                    search_dir,
                     params.get("include")
                 )
+                
+                # 如果是文件搜索，过滤结果只保留该文件
+                if search_path.is_file():
+                    file_name = search_path.name
+                    matches = [m for m in matches if m == file_name]
             except Exception as e:
                 return ToolCallResult(
                     success=False,
@@ -237,7 +251,8 @@ class GrepTool(BaseTool):
             return ToolCallResult(
                 success=True,
                 result=result,
-                error=None
+                error=None,
+                result_for_assistant=self._format_result_for_assistant(result)
             )
             
         except Exception as e:
