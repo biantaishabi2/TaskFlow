@@ -141,9 +141,6 @@ class FileEditTool(BaseTool):
             return False, message
             
         # 检查文件是否已被读取（时间戳验证）
-        if context is None:
-            return False, "缺少 context 参数，无法验证文件读取状态"
-            
         read_timestamps = context.get('read_timestamps', {})
         is_read, error_msg = self._verify_file_read(str(path), read_timestamps)
         if not is_read:
@@ -182,6 +179,18 @@ class FileEditTool(BaseTool):
         
     async def execute(self, params: Dict[str, Any], context: Optional[Dict] = None) -> ToolCallResult:
         """执行文件编辑"""
+        # 检查 context 参数
+        if "context" not in params or not isinstance(params["context"], dict):
+            return ToolCallResult(
+                success=False,
+                result=None,
+                error="必须在 params 中提供包含 read_timestamps 字典的 context 参数"
+            )
+            
+        context = params["context"]
+        if "read_timestamps" not in context:
+            context["read_timestamps"] = {}
+            
         # 验证参数
         is_valid, error_msg = self.validate_parameters(params, context)
         if not is_valid:
@@ -223,8 +232,7 @@ class FileEditTool(BaseTool):
             path.write_text(updated_file, encoding=encoding)
             
             # 更新读取时间戳为文件的最新修改时间
-            context = context or {}
-            read_timestamps = context.get('read_timestamps', {})
+            read_timestamps = context["read_timestamps"]
             read_timestamps[str(path)] = os.stat(str(path)).st_mtime
             
             result = {

@@ -434,10 +434,10 @@ docker run -p 5000:5000 -p 8080:8080 task-planner
 
 ```bash
 # 基本用法
-task-planner run-subtasks subtasks.json
+task-planner run-subtasks examples/demo_subtasks/data_analyzer.json
 
 # 指定日志目录和执行器
-task-planner run-subtasks subtasks.json --logs-dir custom_logs --use-claude
+task-planner run-subtasks examples/demo_subtasks/data_analyzer.json --logs-dir custom_logs --use-claude
 ```
 
 系统会：

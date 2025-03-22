@@ -67,6 +67,17 @@ class FileReadTool(BaseTool):
                     "type": "int",
                     "required": False,
                     "description": "结束行号（包含该行）"
+                },
+                "context": {
+                    "type": "object",
+                    "required": True,
+                    "description": "包含 read_timestamps 字典的上下文对象",
+                    "properties": {
+                        "read_timestamps": {
+                            "type": "object",
+                            "description": "文件读取时间戳记录"
+                        }
+                    }
                 }
             },
             "metadata": {
@@ -276,6 +287,18 @@ class FileReadTool(BaseTool):
     async def execute(self, params: Dict[str, Any], context: Optional[Dict] = None) -> ToolCallResult:
         """执行文件读取"""
         try:
+            # 0. 检查context参数
+            if "context" not in params or not isinstance(params["context"], dict):
+                return ToolCallResult(
+                    success=False,
+                    result=None,
+                    error="必须在 params 中提供包含 read_timestamps 字典的 context 参数"
+                )
+                
+            context = params["context"]
+            if "read_timestamps" not in context:
+                context["read_timestamps"] = {}
+                
             # 1. 参数验证
             is_valid, error_msg = self.validate_parameters(params)
             if not is_valid:
@@ -302,8 +325,7 @@ class FileReadTool(BaseTool):
             # 3. 根据文件类型选择读取方式
             try:
                 # 获取时间戳字典
-                context = context or {}
-                read_timestamps = context.get('read_timestamps', {})
+                read_timestamps = context["read_timestamps"]
                 
                 # 更新读取时间戳
                 read_timestamps[str(path)] = datetime.now().timestamp()

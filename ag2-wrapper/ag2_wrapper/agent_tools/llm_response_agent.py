@@ -129,14 +129,14 @@ class LLMResponseAgent:
 3. TASK_COMPLETED: 任务已经完成，对话可以结束
 4. TEXT_RESPONSE: 普通文本回复，继续对话
 
-明确指示：当助手提供代码并要求执行、保存或运行代码时，如果没有rm命令的话，你应该总是选择TOOL_APPROVED。如果有rm命令你应该拒绝，告诉他可以mv这个文件，而不是使用危险的删除。
+明确指示：当助手提供了工具调用的建议（具体的格式下面有），或当助手提供代码并要求执行、保存或运行时，如果没有rm命令的话，你应该总是选择TOOL_APPROVED。如果有rm命令你应该拒绝，告诉他可以mv这个文件，而不是使用危险的删除。
 
 具体判断标准：
+- 如果消息中包含"suggested tool call"或类似结构化工具调用格式，请选择TOOL_APPROVED
 - 如果助手提供了Python代码块(```python)，请选择TOOL_APPROVED
 - 如果助手提供了Shell命令(```sh)，请选择TOOL_APPROVED
 - 如果助手使用了诸如"请执行"、"请运行"、"请保存"这类指令，请选择TOOL_APPROVED
 - 如果助手提供了操作步骤并期望你执行，请选择TOOL_APPROVED
-- 如果消息中包含"suggested tool call"或类似结构化工具调用格式，请选择TOOL_APPROVED
 - 如果消息中包含诸如"function_call"、"tool_call"或类似格式的函数调用建议，请选择TOOL_APPROVED
 
 工具调用格式示例（以下形式出现时都应选择TOOL_APPROVED）：
@@ -147,6 +147,8 @@ suggested tool call: search_web(query="Python数据分析库")
 ```
 function call: execute_code(language="python", code="print('Hello world')")
 ```
+
+在判断出现了工具调用或者代码执行的时候，你同意的时候总是要选择TOOL_APPROVED，永远不要在text response中回答同意，请继续。（这样会拒绝工具的执行）
 只有在以下情况才返回 TASK_COMPLETED：
 1. 工具调用已经成功执行完毕，你不能在助手提出要求之后不帮他执行就返回TASK_COMPLETED
 2. 助手明确表示任务已完成，并且他还要实际确认这一点，而不是在执行之前就宣称任务已经完成

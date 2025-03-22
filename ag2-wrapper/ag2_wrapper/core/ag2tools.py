@@ -29,16 +29,13 @@ class AG2ToolManager:
     
     def __init__(self):
         """初始化工具管理器"""
-        # 内部工具注册表: {工具名称: 工具配置}
-        self._tools: dict[str, BaseTool] = {}  # 添加类型注解
-        
-        # 外部工具管理器列表
-        self.external_tool_managers = []
+        self._tools: Dict[str, Dict[str, Any]] = {}
+        self.external_tool_managers: List[Any] = []
     
     def register_tool(self, 
                      tools: List[BaseTool],
                      caller: ConversableAgent,
-                     executor: ConversableAgent):
+                     executor: ConversableAgent) -> None:
         """注册工具到AG2
         
         Args:
@@ -47,33 +44,46 @@ class AG2ToolManager:
             executor: 执行代理
         """
         for tool in tools:
-            # 注册到内部工具表
-            self._tools[tool.name] = {
-                'tool': tool,
-                'description': tool.description,
-                'parameters': tool.parameters
-            }
-            
-            # 创建工具包装函数
-            async def tool_wrapper(**kwargs):
-                return await tool.execute(kwargs)
-            
-            # 注册到 AutoGen，确保传入所有必需参数
-            register_function(
-                tool_wrapper,
-                name=tool.name,  # 工具名称
-                caller=caller,   # 调用者代理
-                executor=executor,  # 执行代理
-                description=tool.description  # 工具描述
-            )
+            try:
+                # 注册到内部工具表
+                self._tools[tool.name] = {
+                    'tool': tool,
+                    'description': tool.description,
+                    'parameters': tool.parameters
+                }
+                
+                # 创建工具包装函数
+                async def tool_wrapper(**kwargs: Dict[str, Any]) -> Any:
+                    try:
+                        return await tool.execute(kwargs)
+                    except Exception as e:
+                        logger.error(f"工具 {tool.name} 执行失败: {str(e)}")
+                        raise
+                
+                # 注册到 AutoGen，确保传入所有必需参数
+                register_function(
+                    tool_wrapper,
+                    name=tool.name,  # 工具名称
+                    caller=caller,   # 调用者代理
+                    executor=executor,  # 执行代理
+                    description=tool.description  # 工具描述
+                )
+                
+                logger.debug(f"成功注册工具: {tool.name}")
+                
+            except Exception as e:
+                logger.error(f"注册工具 {tool.name} 失败: {str(e)}")
+                continue
     
-    def register_external_tool_manager(self, tool_manager) -> None:
+    def register_external_tool_manager(self, tool_manager: Any) -> None:
         """注册外部工具管理器
-        参数要求：
-        - 必须实现execute_tool方法
-        - 应该实现get_registered_tools方法
-        注意：多个工具管理器会按注册顺序尝试执行
+        
+        Args:
+            tool_manager: 外部工具管理器实例，必须实现execute_tool方法
         """
+        if not hasattr(tool_manager, 'execute_tool'):
+            raise ValueError("外部工具管理器必须实现execute_tool方法")
+            
         self.external_tool_managers.append(tool_manager)
         logger.debug(f"已注册外部工具管理器: {tool_manager.__class__.__name__}")
     

@@ -50,6 +50,55 @@ class BaseTool(BaseModel, ABC):
         """工具执行方法"""
         raise NotImplementedError
 
+    def execute_sync(self, params=None, context=None):
+        """工具同步执行方法，使用新的事件循环同步运行异步execute方法
+        
+        参数:
+            params: Dict[str, Any] - 工具参数字典，用户提供的参数
+            context: Optional[Dict] - 执行上下文，包含如read_timestamps等系统状态信息
+            
+        返回:
+            ToolCallResult - 工具执行结果
+        """
+        import asyncio
+        
+        try:
+            # 创建新的事件循环
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # 处理参数格式
+            kwargs = {}
+            if params is not None:
+                if isinstance(params, dict):
+                    kwargs = params
+                else:
+                    # 尝试从其他格式转换
+                    try:
+                        kwargs = dict(params)
+                    except:
+                        kwargs = {"params": params}
+            
+            # 添加上下文参数
+            if context is not None:
+                kwargs["context"] = context
+            
+            # 同步执行异步方法
+            result = loop.run_until_complete(self.execute(**kwargs))
+            
+            # 关闭事件循环
+            loop.close()
+            
+            return result
+        except Exception as e:
+            import logging
+            logging.error(f"同步执行工具 {self.name} 失败: {str(e)}")
+            return ToolCallResult(
+                success=False,
+                result=None,
+                error=f"执行出错: {str(e)}"
+            )
+
 
 # ============================== 具体工具实现 ==============================
 # ============================== 接口调用工具 ==============================

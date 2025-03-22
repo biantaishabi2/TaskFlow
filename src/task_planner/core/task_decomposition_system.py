@@ -14,6 +14,7 @@ from task_planner.core.task_planner import TaskPlanner
 from task_planner.core.task_executor import TaskExecutor
 from ag2_wrapper.core.ag2_two_agent_executor import AG2TwoAgentExecutor
 from task_planner.util.claude_task_bridge import TaskClaudeBridge, TaskLLMBridge
+import asyncio
 
 # 配置日志
 logs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), 'logs')
@@ -159,7 +160,7 @@ class TaskDecompositionSystem:
                         'elapsed_time': time.time() - execution_start_time
                     }
                     json.dump(progress_data, f, ensure_ascii=False, indent=2)
-            
+        
         # 计算总耗时
         execution_duration = time.time() - execution_start_time
         

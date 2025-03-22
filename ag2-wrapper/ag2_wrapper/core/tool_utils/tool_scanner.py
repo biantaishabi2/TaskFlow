@@ -5,7 +5,7 @@ import os
 import logging
 from typing import Dict, List, Set, Optional
 from pathlib import Path
-from exceptions import ToolScanError
+from .exceptions import ToolScanError
 
 class ToolScanner:
     """工具目录扫描器"""
@@ -144,4 +144,4 @@ class ToolScanner:
             
         except Exception as e:
             logging.warning(f"处理工具 {tool_name} 时出错: {str(e)}")
-            return None 
+            return None

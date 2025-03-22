@@ -6,9 +6,9 @@ import os
 import logging
 from pathlib import Path
 from typing import List, Dict
-from tool_scanner import ToolScanner
+from .tool_scanner import ToolScanner
 from tool_loader import ToolLoader
-from exceptions import ToolError, ToolLoadError, ToolScanError
+from .exceptions import ToolError, ToolLoadError, ToolScanError
 
 # 配置日志输出
 logging.basicConfig(
@@ -314,4 +314,4 @@ def test_excluded_tools(tool_scanner):
     assert len(filtered_tools) == len(all_tools) - 1
     print(f"✓ 验证通过：工具目录 {tool_to_exclude} 已被排除")
     
-    print("\n✓ 工具排除功能测试通过") 
+    print("\n✓ 工具排除功能测试通过")

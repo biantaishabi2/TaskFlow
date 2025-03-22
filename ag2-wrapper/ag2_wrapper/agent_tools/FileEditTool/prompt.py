@@ -15,6 +15,7 @@ PROMPT = """这是一个用于编辑文件的工具。对于移动或重命名�
 1. file_path：要修改的文件的绝对路径（必须是绝对路径，不能是相对路径）
 2. old_string：要替换的文本（必须在文件中唯一存在，且必须与文件内容完全匹配，包括所有空格和缩进）
 3. new_string：用于替换 old_string 的编辑后的文本
+4. context：包含read_timestamps字典的上下文参数（必需）
 
 该工具将在指定文件中替换 old_string 的一个实例为 new_string。
 
@@ -66,6 +67,38 @@ PROMPT = """这是一个用于编辑文件的工具。对于移动或重命名�
 4. 保持代码格式和缩进的一致性
 5. 每次调用只能修改一个实例
 6. 对于大型修改，建议使用其他方式（如 mv 到 archive 再创建新文件）
-记住：当对同一文件进行多次文件编辑时，应该在单个消息中使用多次调用此工具，而不是在多个消息中每次调用一次"""
+7. 【重要】调用此工具时必须提供context参数，包含read_timestamps字典
+   - 系统会自动跟踪文件的读取和修改时间戳
+   - 只有先被FileReadTool成功读取的文件才能被编辑
+   - 这种设计确保了文件操作的安全性
+
+调用示例：
+
+正确的调用格式：
+```json
+{
+    "file_path": "/absolute/path/to/file.py",
+    "old_string": "原始文本内容（需在文件中唯一存在）",
+    "new_string": "新的文本内容",
+    "context": {
+        "read_timestamps": {}
+    }
+}
+```
+
+错误的调用格式（会导致错误）：
+```json
+{
+    "file_path": "/absolute/path/to/file.py",
+    "old_string": "原始文本内容",
+    "new_string": "新的文本内容"
+}
+```
+
+注意：每次调用都必须提供context参数，这是确保文件操作安全性的关键机制。
+如果是第一次编辑文件，需要先使用FileReadTool读取文件，然后使用其返回的read_timestamps；
+如果之前已经读取过文件，应该使用之前的read_timestamps。
+
+记住：当对同一文件进行多次文件编辑时，应该在单个消息中使用多次调用此工具，而不是在多个消息中每次调用一次。"""
 
 DESCRIPTION = "编辑已存在文件的内容（需要先使用 FileReadTool 读取文件）" 
