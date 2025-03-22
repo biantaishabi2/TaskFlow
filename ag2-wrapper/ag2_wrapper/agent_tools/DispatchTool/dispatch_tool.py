@@ -31,17 +31,13 @@ from .conclusion_tool import ConclusionTool, PROMPT as CONCLUSION_PROMPT
 
 # 在文件开头添加导入
 from ...agent_tools.FileReadTool.prompt import DESCRIPTION as FR_DESC, PROMPT as FR_PROMPT
-from ...agent_tools.FileWriteTool.prompt import DESCRIPTION as FW_DESC, PROMPT as FW_PROMPT
-from ...agent_tools.FileEditTool.prompt import DESCRIPTION as FE_DESC, PROMPT as FE_PROMPT
 from ...agent_tools.GlobTool.prompt import DESCRIPTION as GLOB_DESC, PROMPT as GLOB_PROMPT
 from ...agent_tools.GrepTool.prompt import DESCRIPTION as GREP_DESC, PROMPT as GREP_PROMPT
 from ...agent_tools.lsTool.prompt import DESCRIPTION as LS_DESC, PROMPT as LS_PROMPT
-from ...agent_tools.FileEditTool.file_edit_tool import FileEditTool
 from ...agent_tools.FileReadTool.file_read_tool import FileReadTool
-from ...agent_tools.FileWriteTool.file_write_tool import FileWriteTool
 from ...agent_tools.GlobTool.glob_tool import GlobTool
 from ...agent_tools.GrepTool.grep_tool import GrepTool
-from ...agent_tools.lsTool.ls_tool import LSTool
+from ...agent_tools.lsTool.ls_tool import lsTool
 
 class DispatchTool(BaseTool):
     # 添加配置属性
@@ -98,6 +94,10 @@ class DispatchTool(BaseTool):
             
             # 2. 构建完整提示词
             prompt_parts = [
+                "工作环境：",
+                f"当前工作目录: {os.path.abspath(self.work_dir)}",
+                "注意: 所有相对路径都将相对于此目录进行解析",
+                "=============",
                 "可用工具列表：",
                 "=============",
                 *tool_descriptions,
@@ -360,8 +360,6 @@ class DispatchTool(BaseTool):
             # 创建工具实例并注册
             tools = [
                 (FileReadTool(), FR_PROMPT),
-                (FileWriteTool(), FW_PROMPT),
-                (FileEditTool(), FE_PROMPT),
                 (GlobTool(), GLOB_PROMPT),
                 (GrepTool(), GREP_PROMPT),
                 (LSTool(), LS_PROMPT),
@@ -370,7 +368,8 @@ class DispatchTool(BaseTool):
             
             # 为每个工具创建包装函数并注册
             def create_tool_wrapper(tool: BaseTool):
-                async def wrapper(**kwargs: Dict[str, Any]) -> Dict[str, Any]:
+                async def wrapper(*args: Any, **kwargs: Any) -> Dict[str, Any]:
+                    # 直接传递kwargs给execute方法
                     result = await tool.execute(kwargs)
                     # 如果是 conclusion 工具且执行成功,立即结束对话
                     if tool.name == "return_conclusion" and result.success:
