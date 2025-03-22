@@ -75,8 +75,12 @@ class AG2TwoAgentExecutor:
             "timeout": 500
         }
         
-        # 初始化文件读取时间戳字典
-        self.read_timestamps = {}
+        # 使用模块级全局时间戳字典，确保所有工具共享同一个引用
+        from ..agent_tools.global_timestamps import GLOBAL_TIMESTAMPS
+        self.read_timestamps = GLOBAL_TIMESTAMPS
+        
+        # 添加路径标准化辅助函数
+        self.normalize_path = lambda p: str(Path(p).resolve())
         
         # 初始化工具 - 使用同步方式
         self._initialize_tools_sync()
@@ -142,7 +146,7 @@ class AG2TwoAgentExecutor:
             # 构建完整系统提示词
             system_prompt = DEFAULT_SYSTEM_PROMPT.replace("{TOOLS_SECTION}", tools_section)
             
-            # 创建助手代理，使用增强的系统提示词
+            # 创建助手代理
             self.assistant = AssistantAgent(
                 name="任务助手",
                 system_message=system_prompt,
@@ -162,22 +166,53 @@ class AG2TwoAgentExecutor:
                     tool_instance = tool_class()
                     
                     # 创建带context的同步工具包装函数
-                    def tool_wrapper_sync(**kwargs: Dict[str, Any]) -> Dict[str, Any]:
+                    executor = self  # 捕获 self 引用
+                    def tool_wrapper_sync(params: Dict[str, Any]) -> Dict[str, Any]:
                         try:
-                            # 创建包含read_timestamps的context
-                            context = {"read_timestamps": self.read_timestamps.copy()}
-                            
-                            # 使用同步方法执行工具，正确传递params和context
-                            result = tool_instance.execute_sync(params=kwargs, context=context)
-                            
-                            # 如果工具更新了read_timestamps，记录到实例变量中
-                            if isinstance(context, dict) and 'read_timestamps' in context:
-                                self.read_timestamps.update(context['read_timestamps'])
+                            # 确保 params 中有 kwargs
+                            if "kwargs" not in params:
+                                params = {"kwargs": params}
                                 
-                            # 提取结果
-                            if hasattr(result, 'result'):
-                                return result.result
-                            return result
+                            # 确保 kwargs 中有 context
+                            if "context" not in params["kwargs"]:
+                                params["kwargs"]["context"] = {}
+                                
+                            # 重要: 无论LLM传入什么时间戳字典，都直接替换为执行器的引用
+                            # 这样可以完全绕过LLM构造参数的问题
+                            params["kwargs"]["context"]["read_timestamps"] = executor.read_timestamps
+                            
+                            # 统一路径处理 - 添加辅助函数供工具使用
+                            params["kwargs"]["context"]["normalize_path"] = executor.normalize_path
+                            
+                            # 确认时间戳字典ID是否一致
+                            ts_dict_id = id(params["kwargs"]["context"]["read_timestamps"])
+                            if ts_dict_id != id(executor.read_timestamps):
+                                logging.error(f"工具 {tool_instance.name} - 时间戳字典ID不一致")
+                            
+                            # 执行工具
+                            result = tool_instance.execute_sync(params)
+                            
+                            # 处理返回结果
+                            if hasattr(result, 'success'):
+                                # 如果是 ToolCallResult
+                                if result.success:
+                                    # 优先使用 result_for_assistant
+                                    if hasattr(result, 'result_for_assistant') and result.result_for_assistant is not None:
+                                        return {"result": result.result_for_assistant}
+                                    
+                                    # 检查是否是结论工具
+                                    if tool_instance.name == "return_conclusion":
+                                        return {
+                                            **result.result,
+                                            "should_terminate": True
+                                        }
+                                    return result.result if result.result is not None else {}
+                                else:
+                                    raise Exception(result.error or "工具执行失败")
+                            else:
+                                # 如果是直接返回结果
+                                return result if result is not None else {}
+                                
                         except Exception as e:
                             logging.error(f"工具 {tool_instance.name} 执行失败: {str(e)}")
                             raise

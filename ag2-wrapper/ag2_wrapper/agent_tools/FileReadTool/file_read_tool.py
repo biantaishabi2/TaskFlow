@@ -90,10 +90,19 @@ class FileReadTool(BaseTool):
         
     def validate_parameters(self, params: Dict) -> Tuple[bool, str]:
         """验证参数有效性"""
-        if "file_path" not in params or not isinstance(params["file_path"], str):
+        # 处理嵌套参数结构
+        processed_params = params
+        
+        # 处理 params['kwargs'] 的情况
+        if isinstance(processed_params, dict) and 'kwargs' in processed_params:
+            processed_params = processed_params['kwargs']
+        
+        logging.debug(f"验证参数")
+            
+        if "file_path" not in processed_params or not isinstance(processed_params["file_path"], str):
             return False, "必须提供 file_path 参数"
             
-        path = Path(params["file_path"]).resolve()
+        path = Path(processed_params["file_path"]).resolve()
         
         # 检查文件是否存在
         if not path.exists():
@@ -106,7 +115,7 @@ class FileReadTool(BaseTool):
         # 检查文件大小
         file_size = path.stat().st_size
         if not self._is_image_file(path):
-            if file_size > self.TEXT_FILE_SIZE_LIMIT and not (params.get("start_line") or params.get("end_line")):
+            if file_size > self.TEXT_FILE_SIZE_LIMIT and not (processed_params.get("start_line") or processed_params.get("end_line")):
                 return False, f"文件过大 ({file_size/1024:.1f}KB)，请使用 start_line 和 end_line 参数分段读取"
                 
         return True, ""
@@ -284,24 +293,63 @@ class FileReadTool(BaseTool):
         except Exception as e:
             return False, f"文件状态检查失败: {str(e)}"
             
-    async def execute(self, params: Dict[str, Any], context: Optional[Dict] = None) -> ToolCallResult:
+    async def execute(self, params: Dict[str, Any] = None, **kwargs) -> ToolCallResult:
         """执行文件读取"""
         try:
-            # 0. 检查context参数
-            if "context" not in params or not isinstance(params["context"], dict):
+            # 确保params是一个字典
+            if params is None:
+                params = kwargs
+                
+            # 保存原始参数用于可能的回退
+            original_params = params.copy() if isinstance(params, dict) else {"non_dict": str(params)}
+            
+            # 处理嵌套的参数结构
+            processed_params = params
+            
+            # 解包 kwargs
+            if isinstance(processed_params, dict) and "kwargs" in processed_params:
+                processed_params = processed_params["kwargs"]
+                
+            # 检查必需参数
+            if "file_path" not in processed_params:
+                logging.error(f"缺少file_path参数")
                 return ToolCallResult(
                     success=False,
                     result=None,
-                    error="必须在 params 中提供包含 read_timestamps 字典的 context 参数"
+                    error="缺少必需参数: file_path"
                 )
                 
-            context = params["context"]
-            if "read_timestamps" not in context:
-                context["read_timestamps"] = {}
+            # 先定义 path
+            path = Path(processed_params["file_path"]).resolve()
+            
+            # 检查context参数
+            if "context" not in processed_params or not isinstance(processed_params["context"], dict):
+                # 如果没有 context，创建一个空的 context
+                processed_params["context"] = {}
+                logging.debug("在参数中创建了空的 context 字典")
                 
+            context = processed_params["context"]
+            if "read_timestamps" not in context:
+                # 尝试从原始参数中获取
+                if isinstance(original_params, dict) and "kwargs" in original_params:
+                    kwargs_context = original_params["kwargs"].get("context", {})
+                    if isinstance(kwargs_context, dict) and "read_timestamps" in kwargs_context:
+                        logging.debug("从原始参数中恢复read_timestamps字典")
+                        context["read_timestamps"] = kwargs_context["read_timestamps"]
+                else:
+                    context["read_timestamps"] = {}
+                
+            # 获取时间戳字典的引用
+            read_timestamps = context.get("read_timestamps", {})
+            
+            # 更新时间戳
+            resolved_path = str(path)
+            read_timestamps[resolved_path] = datetime.now().timestamp()
+            
             # 1. 参数验证
-            is_valid, error_msg = self.validate_parameters(params)
+            is_valid, error_msg = self.validate_parameters(processed_params)
             if not is_valid:
+                logging.error(f"参数验证失败: {error_msg}")
                 return ToolCallResult(
                     success=False,
                     result=None,
@@ -309,9 +357,8 @@ class FileReadTool(BaseTool):
                 )
                 
             # 获取参数
-            path = Path(params["file_path"]).resolve()
-            start_line = params.get("start_line")
-            end_line = params.get("end_line")
+            start_line = processed_params.get("start_line")
+            end_line = processed_params.get("end_line")
             
             # 2. 权限检查
             has_permission, error_msg = self._check_file_permission(path)
@@ -327,8 +374,28 @@ class FileReadTool(BaseTool):
                 # 获取时间戳字典
                 read_timestamps = context["read_timestamps"]
                 
-                # 更新读取时间戳
-                read_timestamps[str(path)] = datetime.now().timestamp()
+                # 更新为使用当前时间戳
+                # 获取规范化路径和原始路径
+                resolved_path = str(path.resolve())
+                orig_path = str(path)
+                
+                # 使用全局时间戳字典
+                from ..global_timestamps import GLOBAL_TIMESTAMPS
+                
+                # 记录当前时间（单一来源）
+                current_time = datetime.now().timestamp()
+                
+                # 直接更新全局时间戳模块中的全局字典
+                GLOBAL_TIMESTAMPS[resolved_path] = current_time
+                if orig_path != resolved_path:
+                    GLOBAL_TIMESTAMPS[orig_path] = current_time
+                
+                logging.debug(f"更新全局时间戳 - 路径: {resolved_path}")
+                
+                # 同时也更新参数中的时间戳字典（为了兼容性）
+                read_timestamps[resolved_path] = current_time
+                if orig_path != resolved_path:
+                    read_timestamps[orig_path] = current_time
                 
                 if self._is_image_file(path):
                     content, metadata = self._read_image_file(path)
@@ -349,6 +416,9 @@ class FileReadTool(BaseTool):
                         end_line=metadata["end_line"]
                     )
                     
+                # 在读取成功后记录
+                logging.debug(f"成功读取文件: {orig_path}, 时间戳字典包含 {len(read_timestamps)} 个条目")
+                
                 return ToolCallResult(
                     success=True,
                     result=result,
