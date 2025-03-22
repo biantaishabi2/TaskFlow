@@ -15,18 +15,20 @@ from task_planner.util.claude_cli import claude_api
 from task_planner.core.context_management import TaskContext
 
 # 尝试导入Gemini分析器
-try:
-    # 首先尝试从项目内部vendor目录导入
-    from task_planner.vendor.claude_client.agent_tools.gemini_analyzer import GeminiTaskAnalyzer
-    GEMINI_AVAILABLE = True
-except ImportError:
-    try:
-        # 备选：外部依赖路径
-        sys.path.insert(0, '/home/wangbo/document/wangbo/claude_client')
-        from agent_tools.gemini_analyzer import GeminiTaskAnalyzer
-        GEMINI_AVAILABLE = True
-    except ImportError:
-        GEMINI_AVAILABLE = False
+# 注释掉claude_client导入，因为不再使用该功能
+# try:
+#     # 首先尝试从项目内部vendor目录导入
+#     from task_planner.vendor.claude_client.agent_tools.gemini_analyzer import GeminiTaskAnalyzer
+#     GEMINI_AVAILABLE = True
+# except ImportError:
+#     try:
+#         # 备选：外部依赖路径
+#         sys.path.insert(0, '/home/wangbo/document/wangbo/claude_client')
+#         from agent_tools.gemini_analyzer import GeminiTaskAnalyzer
+#         GEMINI_AVAILABLE = True
+#     except ImportError:
+#         GEMINI_AVAILABLE = False
+GEMINI_AVAILABLE = False  # 直接设置为False，不再尝试导入
 
 # 配置日志
 logging.basicConfig(
