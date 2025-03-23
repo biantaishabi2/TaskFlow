@@ -365,7 +365,7 @@ class FileEditTool(BaseTool):
             file_path = processed_params["file_path"]
             old_string = processed_params["old_string"]
             new_string = processed_params["new_string"]
-pip install -e .            
+           
             # 检查文件权限
             path = Path(file_path)
             has_permission, error_msg = self._check_file_permission(path)
