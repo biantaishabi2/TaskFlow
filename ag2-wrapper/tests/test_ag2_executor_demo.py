@@ -9,8 +9,7 @@ sys.path.extend([
 ])
 
 from ag2_wrapper.core.ag2_two_agent_executor import AG2TwoAgentExecutor
-
-
+from ag2_wrapper.core.config import ConfigManager
 
 # 动态验证路径
 try:
@@ -21,9 +20,11 @@ except ImportError:
     print('\n'.join(sys.path))
     exit(1)
 
-# 测试代码保持不变
+# 初始化配置
+config = ConfigManager()
 
-executor = AG2TwoAgentExecutor()
+# 测试代码
+executor = AG2TwoAgentExecutor(config=config)
 context = TaskContext(task_id="test")
 
 # 修改这部分，让用户代理发起对话
@@ -36,7 +37,8 @@ print(f"执行结果：{result.chat_history[-1]['content'] if result.chat_histor
 
 # 测试一个实际的任务场景
 def test_practical_task():
-    executor = AG2TwoAgentExecutor()
+    config = ConfigManager()
+    executor = AG2TwoAgentExecutor(config=config)
     
     # 创建一个模拟的任务上下文
     context = TaskContext(task_id="data_analysis_task_001")
@@ -95,7 +97,8 @@ def test_practical_task():
     print(f"任务状态: {result['task_status']}")
 
 def test_multi_step_task():
-    executor = AG2TwoAgentExecutor()
+    config = ConfigManager()
+    executor = AG2TwoAgentExecutor(config=config)
     context = TaskContext(task_id="web_app_development_001")
     
     # 定义一个包含多个子任务的复杂任务

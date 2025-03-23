@@ -33,47 +33,75 @@ class AG2ToolManager:
         self.external_tool_managers: List[Any] = []
     
     def register_tool(self, 
-                     tools: List[BaseTool],
-                     caller: ConversableAgent,
-                     executor: ConversableAgent) -> None:
-        """注册工具到AG2
+                     tool_class: Type[BaseTool], 
+                     prompt: str, 
+                     context: Dict[str, Any] = None) -> None:
+        """注册工具到管理器
         
         Args:
-            tools: 要注册的工具列表
-            caller: 调用者代理
-            executor: 执行代理
+            tool_class: 工具类
+            prompt: 工具提示词
+            context: 工具上下文（可选）
         """
-        for tool in tools:
+        try:
+            # 获取工具类的初始化参数
+            init_params = {}
+            if hasattr(tool_class, '__init__'):
+                sig = inspect.signature(tool_class.__init__)
+                # 过滤掉self参数
+                params = {k: v for k, v in sig.parameters.items() if k != 'self'}
+                # 从context中获取匹配的参数
+                if context:
+                    init_params = {
+                        k: context[k] 
+                        for k in params.keys() 
+                        if k in context
+                    }
+            
+            # 创建工具实例
             try:
-                # 注册到内部工具表
-                self._tools[tool.name] = {
-                    'tool': tool,
-                    'description': tool.description,
-                    'parameters': tool.parameters
-                }
-                
-                # 创建工具包装函数
-                async def tool_wrapper(**kwargs: Dict[str, Any]) -> Any:
+                tool_instance = tool_class(**init_params)
+            except TypeError as e:
+                logger.warning(f"使用参数创建工具实例失败: {str(e)}，尝试无参创建")
+                tool_instance = tool_class()
+            
+            # 设置上下文
+            if context:
+                for key, value in context.items():
                     try:
-                        return await tool.execute(kwargs)
-                    except Exception as e:
-                        logger.error(f"工具 {tool.name} 执行失败: {str(e)}")
-                        raise
+                        # 检查是否有setter方法
+                        setter = getattr(tool_instance.__class__, key).fset if hasattr(tool_instance.__class__, key) else None
+                        if setter is not None:
+                            setattr(tool_instance, key, value)
+                        elif hasattr(tool_instance, key):
+                            # 对于全局属性，即使已经有值也要更新
+                            if key in ['read_timestamps', 'normalize_path']:
+                                setattr(tool_instance, key, value)
+                                logger.debug(f"已更新工具 {tool_instance.name} 的全局属性: {key}")
+                            else:
+                                setattr(tool_instance, key, value)
+                        else:
+                            # 对于全局属性，如果不存在则添加
+                            if key in ['read_timestamps', 'normalize_path']:
+                                setattr(tool_instance, key, value)
+                                logger.debug(f"已添加工具 {tool_instance.name} 的全局属性: {key}")
+                            else:
+                                logger.debug(f"工具 {tool_instance.name} 不支持设置属性: {key}")
+                    except AttributeError:
+                        # 对于全局属性，如果设置失败则记录警告
+                        if key in ['read_timestamps', 'normalize_path']:
+                            logger.warning(f"无法为工具 {tool_instance.name} 设置全局属性: {key}")
+                        else:
+                            logger.debug(f"工具 {tool_instance.name} 不支持设置属性: {key}")
                 
-                # 注册到 AutoGen，确保传入所有必需参数
-                register_function(
-                    tool_wrapper,
-                    name=tool.name,  # 工具名称
-                    caller=caller,   # 调用者代理
-                    executor=executor,  # 执行代理
-                    description=tool.description  # 工具描述
-                )
-                
-                logger.debug(f"成功注册工具: {tool.name}")
-                
-            except Exception as e:
-                logger.error(f"注册工具 {tool.name} 失败: {str(e)}")
-                continue
+            # 只注册到内部工具表
+            self._tools[tool_instance.name] = tool_instance
+            
+            logging.debug(f"成功注册工具: {tool_instance.name}")
+            
+        except Exception as e:
+            logging.error(f"注册工具失败: {str(e)}")
+            raise
     
     def register_external_tool_manager(self, tool_manager: Any) -> None:
         """注册外部工具管理器
@@ -222,7 +250,7 @@ class AG2ToolManager:
         return [{
             "type": "function",
             "function": {
-                "name": tool.name,  # 使用属性访问而不是字典访问
+                "name": tool.name,
                 "description": tool.description,
                 "parameters": {
                     "type": "object",
@@ -236,5 +264,6 @@ class AG2ToolManager:
             }
         } for tool in self._tools.values()]
 
-    def get_tool(self, name: str) -> BaseTool | None:  # 添加返回类型注解
+    def get_tool(self, name: str) -> BaseTool | None:
+        """获取工具实例"""
         return self._tools.get(name)

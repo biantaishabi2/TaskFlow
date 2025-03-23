@@ -63,7 +63,7 @@ class ToolLoader:
             if use_cache:
                 self._cache[cache_key] = loaded_tools
                 
-            logging.info(f"成功加载 {len(loaded_tools)} 个工具")
+            logging.debug(f"成功加载 {len(loaded_tools)} 个工具")
             return loaded_tools
             
         except Exception as e:
@@ -181,7 +181,7 @@ class ToolLoader:
             if use_cache:
                 self._cache[cache_key] = loaded_tools
                 
-            logging.info(f"成功加载 {len(loaded_tools)} 个工具")
+            logging.debug(f"成功加载 {len(loaded_tools)} 个工具")
             return loaded_tools
             
         except Exception as e:

@@ -55,7 +55,7 @@ class ToolScanner:
                     if tool_info:
                         tool_infos.append(tool_info)
                         
-            logging.info(f"在 {category} 类别中找到 {len(tool_infos)} 个工具")
+            logging.debug(f"在 {category} 类别中找到 {len(tool_infos)} 个工具")
             return tool_infos
             
         except Exception as e:

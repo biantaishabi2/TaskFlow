@@ -58,7 +58,7 @@ class LLMDrivenUserProxy(content_tool_call_agent.ContentToolCallAgent):
         # 创建默认响应代理
         self.response_agent = LLMResponseAgent()
         
-        logger.info("LLMDrivenUserProxy initialized with %d tools", len(self.function_map))
+        logger.debug("LLMDrivenUserProxy initialized with %d tools", len(self.function_map))
 
     def get_human_input(self, prompt=""):
         """获取用户输入（由LLM自动判断）"""

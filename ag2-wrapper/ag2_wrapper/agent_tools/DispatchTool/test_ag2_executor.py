@@ -8,6 +8,22 @@ import logging
 from pathlib import Path
 import asyncio
 from typing import Dict, Any
+import warnings
+import urllib3
+
+# 抑制pydantic的警告
+warnings.filterwarnings("ignore", message="Valid config keys have changed in V2")
+
+# 设置root logger级别
+logging.getLogger().setLevel(logging.WARNING)
+
+# 抑制httpx和urllib3的INFO日志
+logging.getLogger('httpx').setLevel(logging.WARNING)
+logging.getLogger('urllib3').setLevel(logging.WARNING)
+logging.getLogger('LiteLLM').setLevel(logging.WARNING)
+logging.getLogger('litellm').setLevel(logging.WARNING)
+logging.getLogger('autogen').setLevel(logging.ERROR)
+logging.getLogger('ag2_wrapper').setLevel(logging.WARNING)
 
 # 配置日志级别
 logging.basicConfig(
@@ -20,6 +36,7 @@ project_root = Path(__file__).parent.parent.parent.parent
 sys.path.append(str(project_root))
 
 from ag2_wrapper.core.ag2_two_agent_executor import AG2TwoAgentExecutor
+from ag2_wrapper.core.config import ConfigManager
 from task_planner.core.context_management import TaskContext
 
 async def main():
@@ -30,15 +47,15 @@ async def main():
     # 设置测试环境变量
     os.environ["NODE_ENV"] = "test"
     
+    # 初始化配置管理器
+    config = ConfigManager()
+    
     # 初始化执行器和上下文
-    executor = AG2TwoAgentExecutor()
+    executor = AG2TwoAgentExecutor(config=config)
     task_context = TaskContext("test_ag2")
     
     # 设置文件读取时间戳记录
     read_timestamps = {}
-    
-    # 在这里添加调试打印
-    print("初始化read_timestamps:", read_timestamps)
     
     # 定义综合测试任务
     task_definition = {

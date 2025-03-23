@@ -14,6 +14,7 @@ from typing import Dict, Any, Optional, List, Tuple
 from task_planner.core.context_management import TaskContext
 from .ag2tools import AG2ToolManager
 from .tool_utils import ToolLoader, ToolError
+from .config import ConfigManager
 import json
 from pathlib import Path
 from ..core.config import create_openrouter_config
@@ -48,17 +49,20 @@ class AG2TwoAgentExecutor:
     # 文件读取时间戳字典,key为文件路径,value为最后读取时间
     read_timestamps: Dict[str, float]
     
-    def __init__(self, context_manager=None):
-        """初始化
+    def __init__(self,
+                 config: ConfigManager,
+                 tool_manager: AG2ToolManager = None):
+        """初始化双代理执行器
         
         Args:
-            context_manager: 上下文管理器实例，用于管理任务上下文
+            config: 配置对象
+            tool_manager: 工具管理器（可选）
         """
-        # 初始化上下文管理器
-        self.context_manager = context_manager
+        self.config = config
+        self.tool_manager = tool_manager or AG2ToolManager()
         
-        # 初始化工具管理器
-        self.tool_manager = AG2ToolManager()
+        # 初始化上下文管理器
+        self.context_manager = TaskContext("default")
         
         # 初始化工具加载器
         self.tool_loader = ToolLoader()
@@ -82,7 +86,19 @@ class AG2TwoAgentExecutor:
         # 添加路径标准化辅助函数
         self.normalize_path = lambda p: str(Path(p).resolve())
         
-        # 初始化工具 - 使用同步方式
+        # 创建助手和执行器
+        self.assistant = AssistantAgent(
+            name="助手代理",
+            system_message=DEFAULT_SYSTEM_PROMPT,
+            llm_config=self.llm_config
+        )
+        
+        self.executor = LLMDrivenUserProxy(
+            name="用户代理",
+            human_input_mode="ALWAYS"
+        )
+        
+        # 初始化工具
         self._initialize_tools_sync()
 
     def __del__(self):
@@ -137,100 +153,53 @@ class AG2TwoAgentExecutor:
     def _initialize_tools_sync(self):
         """同步初始化工具"""
         try:
-            # 只加载通用工具
-            tools = self.tool_loader.load_tools_sync(category="common", use_cache=True)
+            # 加载工具
+            tools = self.tool_loader.load_tools_sync()
             
-            # 构建工具提示词部分
-            tools_section = self._build_tools_prompt(tools)
-            
-            # 构建完整系统提示词
-            system_prompt = DEFAULT_SYSTEM_PROMPT.replace("{TOOLS_SECTION}", tools_section)
-            
-            # 创建助手代理
-            self.assistant = AssistantAgent(
-                name="任务助手",
-                system_message=system_prompt,
-                llm_config=self.llm_config
-            )
-            
-            # 创建用户代理
-            self.executor = LLMDrivenUserProxy(
-                name="用户代理",
-                human_input_mode="ALWAYS"
-            )
-            
-            # 注册工具
+            # 初始化工具
             for tool_class, prompt in tools:
                 try:
                     # 创建工具实例
                     tool_instance = tool_class()
                     
-                    # 创建带context的同步工具包装函数
-                    executor = self  # 捕获 self 引用
-                    def tool_wrapper_sync(params: Dict[str, Any]) -> Dict[str, Any]:
-                        try:
-                            # 确保 params 中有 kwargs
-                            if "kwargs" not in params:
-                                params = {"kwargs": params}
-                                
-                            # 确保 kwargs 中有 context
-                            if "context" not in params["kwargs"]:
-                                params["kwargs"]["context"] = {}
-                                
-                            # 重要: 无论LLM传入什么时间戳字典，都直接替换为执行器的引用
-                            # 这样可以完全绕过LLM构造参数的问题
-                            params["kwargs"]["context"]["read_timestamps"] = executor.read_timestamps
-                            
-                            # 统一路径处理 - 添加辅助函数供工具使用
-                            params["kwargs"]["context"]["normalize_path"] = executor.normalize_path
-                            
-                            # 确认时间戳字典ID是否一致
-                            ts_dict_id = id(params["kwargs"]["context"]["read_timestamps"])
-                            if ts_dict_id != id(executor.read_timestamps):
-                                logging.error(f"工具 {tool_instance.name} - 时间戳字典ID不一致")
-                            
-                            # 执行工具
-                            result = tool_instance.execute_sync(params)
-                            
-                            # 处理返回结果
-                            if hasattr(result, 'success'):
-                                # 如果是 ToolCallResult
-                                if result.success:
-                                    # 优先使用 result_for_assistant
-                                    if hasattr(result, 'result_for_assistant') and result.result_for_assistant is not None:
-                                        return {"result": result.result_for_assistant}
-                                    
-                                    # 检查是否是结论工具
-                                    if tool_instance.name == "return_conclusion":
-                                        return {
-                                            **result.result,
-                                            "should_terminate": True
-                                        }
-                                    return result.result if result.result is not None else {}
-                                else:
-                                    raise Exception(result.error or "工具执行失败")
-                            else:
-                                # 如果是直接返回结果
-                                return result if result is not None else {}
-                                
-                        except Exception as e:
-                            logging.error(f"工具 {tool_instance.name} 执行失败: {str(e)}")
-                            raise
-                    
-                    # 注册到 AutoGen
-                    register_function(
-                        tool_wrapper_sync,
-                        name=tool_instance.name,
-                        description=f"{tool_instance.description}\n\n{prompt}",
-                        caller=self.assistant,
-                        executor=self.executor
-                    )
+                    # 设置上下文
+                    context = {
+                        "read_timestamps": self.read_timestamps,
+                        "normalize_path": self.normalize_path
+                    }
                     
                     # 注册到工具管理器
                     self.tool_manager.register_tool(
-                        tools=[tool_instance],
+                        tool_class=tool_class,
+                        prompt=prompt,
+                        context=context
+                    )
+                    
+                    # 创建工具包装函数 - 使用工厂函数避免闭包问题
+                    def create_tool_wrapper(tool):
+                        from typing import Any, Dict
+                        
+                        async def wrapper(*, params: Dict[str, Any]) -> Any:
+                            """执行工具操作的包装函数"""
+                            try:
+                                return await tool.execute(params=params)
+                            except Exception as e:
+                                logger.error(f"工具 {tool.name} 执行失败: {str(e)}")
+                                raise
+                        
+                        # 设置函数属性
+                        wrapper.__name__ = f"{tool.name}_wrapper"
+                        wrapper.__doc__ = tool.description
+                        
+                        return wrapper
+                    
+                    # 注册到 AutoGen
+                    register_function(
+                        create_tool_wrapper(tool_instance),
+                        name=tool_instance.name,
                         caller=self.assistant,
-                        executor=self.executor
+                        executor=self.executor,
+                        description=f"{tool_instance.description}\n\n{prompt}"
                     )
                     
                     logging.debug(f"成功注册工具: {tool_instance.name}")

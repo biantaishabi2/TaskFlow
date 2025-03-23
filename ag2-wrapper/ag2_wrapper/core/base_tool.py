@@ -14,7 +14,7 @@
 
 # -------------------------------- 基础依赖 ---------------------------------
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, Tuple, ClassVar, Set
+from typing import Dict, Any, Optional, Tuple, ClassVar, Set, Callable
 from pydantic import BaseModel, Field  # 添加Pydantic
 import requests
 import json
@@ -41,6 +41,10 @@ class BaseTool(BaseModel, ABC):
     description: str = Field(..., description="工具功能描述")
     parameters: Optional[Dict[str, Any]] = Field(None, description="工具参数定义")
     metadata: Dict[str, Any] = Field(default_factory=dict, description="工具元数据，用于存储工具的额外属性如只读标记等")
+    
+    # 添加全局工具属性
+    read_timestamps: Dict[str, float] = Field(default_factory=dict, description="文件读取时间戳字典")
+    normalize_path: Optional[Callable[[str], str]] = Field(None, description="路径标准化函数")
 
     class Config:
         arbitrary_types_allowed = True
@@ -106,6 +110,18 @@ class BaseTool(BaseModel, ABC):
                 result=None,
                 error=f"执行出错: {str(e)}"
             )
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        # 如果没有提供normalize_path，使用默认实现
+        if self.normalize_path is None:
+            from pathlib import Path
+            self.normalize_path = lambda p: str(Path(p).resolve())
+        
+        # 如果没有提供read_timestamps，使用全局时间戳字典
+        if not self.read_timestamps:
+            from ..agent_tools.global_timestamps import GLOBAL_TIMESTAMPS
+            self.read_timestamps = GLOBAL_TIMESTAMPS
 
 
 # ============================== 具体工具实现 ==============================
