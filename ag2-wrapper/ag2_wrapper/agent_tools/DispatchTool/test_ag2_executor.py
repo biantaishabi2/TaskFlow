@@ -37,6 +37,9 @@ async def main():
     # 设置文件读取时间戳记录
     read_timestamps = {}
     
+    # 在这里添加调试打印
+    print("初始化read_timestamps:", read_timestamps)
+    
     # 定义综合测试任务
     task_definition = {
         "id": "test_ag2_001",

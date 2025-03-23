@@ -362,7 +362,7 @@ class DispatchTool(BaseTool):
                 (FileReadTool(), FR_PROMPT),
                 (GlobTool(), GLOB_PROMPT),
                 (GrepTool(), GREP_PROMPT),
-                (LSTool(), LS_PROMPT),
+                (lsTool(), LS_PROMPT),
                 (ConclusionTool(), CONCLUSION_PROMPT)
             ]
             
