@@ -1,7 +1,7 @@
 import sys
 import time
 from enum import Enum
-from pexpect_claude import ClaudeInteraction
+from .pexpect_claude import ClaudeInteraction
 
 class ClaudeClient:
     """Claude命令行工具的客户端封装
