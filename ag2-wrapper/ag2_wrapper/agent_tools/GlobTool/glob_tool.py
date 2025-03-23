@@ -102,24 +102,76 @@ class GlobTool(BaseTool):
             
         return result
     
+    def validate_parameters(self, params: Dict) -> Tuple[bool, str]:
+        """验证参数有效性"""
+        # 检查 pattern 参数
+        if "pattern" not in params:
+            return False, "必须提供 'pattern' 参数"
+        
+        if not isinstance(params["pattern"], str):
+            return False, "'pattern' 参数必须是字符串类型"
+        
+        # 检查 path 参数
+        if "path" in params:
+            if not isinstance(params["path"], str):
+                return False, "'path' 参数必须是字符串类型"
+            
+            path = params["path"]
+            # 检查是否为绝对路径
+            if not os.path.isabs(path):
+                return False, f"必须提供绝对路径，当前提供的是相对路径：{path}"
+            
+            # 检查目录是否存在
+            if not os.path.exists(path):
+                return False, f"目录不存在：{path}"
+            
+            if not os.path.isdir(path):
+                return False, f"路径不是目录：{path}"
+            
+            # 检查是否有读取权限
+            if not os.access(path, os.R_OK):
+                return False, f"无权限访问目录：{path}"
+        
+        return True, ""
+    
     async def execute(self, params: Dict[str, Any]) -> ToolCallResult:
         """执行 glob 搜索"""
+        logging.info(f"GlobTool execute called with params: {params}")
+        
+        # 处理参数，支持直接传参和kwargs包装的情况
+        if "kwargs" in params:
+            params = params["kwargs"]
+        elif "args" in params and params["args"]:
+            params["pattern"] = params["args"][0]
+        
+        # 验证参数
+        is_valid, error_msg = self.validate_parameters(params)
+        if not is_valid:
+            logging.error(f"Parameter validation failed: {error_msg}")
+            return ToolCallResult(
+                success=False,
+                error=error_msg
+            )
+        
         try:
             pattern = params["pattern"]
-            base_path = Path(params.get("path", os.getcwd())).resolve()
+            path = params.get("path", os.getcwd())
             
-            # 检查目录权限
-            if not self._has_read_permission(base_path):
+            # 列出匹配的文件
+            logging.info(f"开始在目录 {path} 中搜索模式 {pattern}")
+            files = self._get_files_with_mtime(pattern, Path(path))
+            logging.info(f"找到 {len(files)} 个匹配文件")
+            
+            if not files:
+                empty_msg = f"在目录 {path} 中未找到匹配模式 {pattern} 的文件"
                 return ToolCallResult(
-                    success=False,
-                    result=None,
-                    error=f"无权限访问目录: {str(base_path)}"
+                    success=True,
+                    result={
+                        "files": [],
+                        "count": 0,
+                        "message": empty_msg
+                    }
                 )
-            
-            # 搜索文件并计时
-            start_time = time.time()
-            files = self._get_files_with_mtime(pattern, base_path)
-            files.sort(key=lambda x: x[1], reverse=True)  # 按修改时间降序排序
             
             # 应用限制
             total_files = len(files)
@@ -127,22 +179,29 @@ class GlobTool(BaseTool):
             
             # 格式化输出
             output = GlobOutput(
-                filenames=[self._format_path(f[0], base_path) for f in files],
-                durationMs=(time.time() - start_time) * 1000,
+                filenames=[self._format_path(f[0], Path(path)) for f in files],
+                durationMs=(time.time() - time.time()) * 1000,
                 numFiles=len(files),
                 truncated=total_files > self.DEFAULT_LIMIT
             )
             
+            # 返回结果
+            result = {
+                "files": output["filenames"],
+                "count": output["numFiles"],
+                "message": f"找到 {output['numFiles']} 个匹配文件"
+            }
+            
             return ToolCallResult(
                 success=True,
-                result=output,
-                error=None,
-                result_for_assistant=self._format_result_for_assistant(output)
+                result=result
             )
             
         except Exception as e:
+            error_msg = f"执行 glob 搜索失败: {str(e)}"
+            logging.error(error_msg)
+            logging.exception("详细错误:")
             return ToolCallResult(
                 success=False,
-                result=None,
-                error=f"搜索文件失败: {str(e)}"
+                error=error_msg
             ) 

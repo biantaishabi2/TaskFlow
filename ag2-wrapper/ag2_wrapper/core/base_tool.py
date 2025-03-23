@@ -61,12 +61,9 @@ class BaseTool(BaseModel, ABC):
             ToolCallResult - 工具执行结果
         """
         import asyncio
+        import nest_asyncio
         
         try:
-            # 创建新的事件循环
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
             # 处理参数格式
             kwargs = {}
             if params is not None:
@@ -83,11 +80,22 @@ class BaseTool(BaseModel, ABC):
             if context is not None:
                 kwargs["context"] = context
             
-            # 同步执行异步方法
-            result = loop.run_until_complete(self.execute(**kwargs))
-            
-            # 关闭事件循环
-            loop.close()
+            # 处理嵌套事件循环
+            try:
+                # 如果当前有事件循环，使用nest_asyncio允许嵌套
+                current_loop = asyncio.get_event_loop()
+                if current_loop.is_running():
+                    nest_asyncio.apply(current_loop)
+                    result = asyncio.run(self.execute(**kwargs))
+                else:
+                    # 没有运行中的事件循环时正常执行
+                    result = asyncio.run(self.execute(**kwargs))
+            except RuntimeError:
+                # 如果获取当前事件循环失败，创建一个新的
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                nest_asyncio.apply(new_loop)
+                result = asyncio.run(self.execute(**kwargs))
             
             return result
         except Exception as e:

@@ -50,9 +50,10 @@ task-planner --help
 | 命令          | 描述                   | 示例                                 |
 |---------------|------------------------|--------------------------------------|
 | plan          | 分析并规划任务         | `task-planner plan "任务描述"`        |
-| run-task      | 执行新任务             | `task-planner run-task "任务描述"`    |
+| execute       | 执行新任务             | `task-planner execute "任务描述"`     |
 | run-subtasks  | 执行预定义子任务文件   | `task-planner run-subtasks tasks.json`|
-| resume        | 恢复已存在任务         | `task-planner resume task_123456`     |
+| api           | 运行任务API服务器      | `task-planner api`                    |
+| visualization | 运行可视化服务器       | `task-planner visualization`          |
 
 #### 1. 分析和规划任务
 ```bash
@@ -71,11 +72,12 @@ task-planner plan "开发网站后端API" --detailed
 
 #### 2. 执行新任务
 ```bash
-task-planner run-task [任务描述|文件路径] [选项]
+task-planner execute [任务描述|文件路径] [选项]
 
 # 示例：
-task-planner run-task "开发一个命令行计算器应用"
-task-planner run-task task.json --file
+task-planner execute "开发一个命令行计算器应用"
+task-planner execute task.json --file
+task-planner execute "创建数据分析报告" --use-claude
 ```
 
 #### 3. 执行预定义子任务
@@ -99,12 +101,20 @@ task-planner run-subtasks my_tasks.json --timeout 600
 - `--logs-dir DIR`: 指定日志输出目录
 - `--use-claude`: 使用Claude执行器而不是默认的AG2执行器
 
-#### 4. 恢复任务
+#### 4. 运行API服务器
 ```bash
-task-planner resume [任务ID] [选项]
+task-planner api [选项]
 
 # 示例：
-task-planner resume task_1689321456 --logs-dir custom_logs
+task-planner api --port 5000
+```
+
+#### 5. 运行可视化服务器
+```bash
+task-planner visualization [选项]
+
+# 示例：
+task-planner visualization --port 8080
 ```
 
 #### 执行器选择
@@ -124,10 +134,10 @@ task-planner resume task_1689321456 --logs-dir custom_logs
 
 ```bash
 # 使用Claude执行器
-task-planner run-task "创建数据分析报告" --use-claude
+task-planner execute "创建数据分析报告" --use-claude
 
 # 使用默认的AG2执行器
-task-planner run-task "创建数据分析报告"
+task-planner execute "创建数据分析报告"
 ```
 
 #### 预定义子任务格式

@@ -1,5 +1,7 @@
 import pandas as pd
 import numpy as np
+import logging
+from typing import Any, Dict
 
 def calculate_csv_stats(file_path):
     """
@@ -63,3 +65,10 @@ if __name__ == "__main__":
         print(f"\n统计数据 - {column}:")
         for stat_name, stat_value in column_stats.items():
             print(f"  {stat_name}: {stat_value}")
+
+logging.info(f"GrepTool 收到的原始参数: {params}")
+if isinstance(params, dict) and "kwargs" in params:
+    logging.info(f"kwargs 中的参数: {params['kwargs']}")
+
+def tool_wrapper_sync(*args: Any, **kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    logging.info(f"工具包装函数收到的参数: args={args}, kwargs={kwargs}")

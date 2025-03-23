@@ -101,7 +101,8 @@ class ToolScanner:
     def _get_tool_info(self, base_path: str, tool_name: str) -> Optional[Dict]:
         """获取工具信息"""
         dir_path = os.path.join(base_path, tool_name)
-        if not os.path.isdir(dir_path) or not tool_name[0].isupper():
+        # 只检查是否为目录，移除大小写检查
+        if not os.path.isdir(dir_path):
             return None
             
         try:

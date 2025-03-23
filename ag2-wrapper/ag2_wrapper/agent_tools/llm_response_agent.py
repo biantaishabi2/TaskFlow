@@ -127,7 +127,7 @@ class LLMResponseAgent:
 1. TOOL_APPROVED: 助手请求执行工具或命令，你同意执行
 2. TOOL_REJECTED: 助手请求执行工具或命令，但你拒绝执行
 3. TASK_COMPLETED: 任务已经完成，对话可以结束
-4. TEXT_RESPONSE: 普通文本回复，继续对话
+4. TEXT_RESPONSE: 普通文本回复，继续对话, 如果需要执行工具调用，请选择TOOL_APPROVED,不要回复同意这样的TEXT_RESPONSE
 
 明确指示：当助手提供了工具调用的建议（具体的格式下面有），或当助手提供代码并要求执行、保存或运行时，如果没有rm命令的话，你应该总是选择TOOL_APPROVED。如果有rm命令你应该拒绝，告诉他可以mv这个文件，而不是使用危险的删除。
 

@@ -9,8 +9,9 @@ import os
 from ...core.base_tool import BaseTool, ToolCallResult
 import json
 from .prompt import PROMPT, DESCRIPTION
+from pydantic import Field
 
-class LSTool(BaseTool):
+class lsTool(BaseTool):
     """
     目录列表工具类 - 以树状结构列出目录内容
     
@@ -24,6 +25,10 @@ class LSTool(BaseTool):
     MAX_FILES: ClassVar[int] = 1000  # 最大文件数限制
     MAX_LINES: ClassVar[int] = 4     # 简略模式下显示的最大行数
     
+    # Pydantic 字段
+    work_dir: str = Field(default_factory=os.getcwd, description="工作目录路径")
+    test_mode: bool = Field(default=False, description="是否为测试模式")
+    
     def __init__(self, **data):
         base_data = {
             "name": "ls",
@@ -33,7 +38,7 @@ class LSTool(BaseTool):
                 "path": {
                     "type": "str",
                     "required": True,
-                    "description": "要列出内容的目录路径（必须是绝对路径）"
+                    "description": "要列出内容的目录路径（支持相对路径和绝对路径）"
                 }
             },
             "metadata": {
@@ -43,7 +48,6 @@ class LSTool(BaseTool):
         }
         base_data.update(data)
         super().__init__(**base_data)
-        self._is_test = data.get("test_mode", False)  # 使用下划线前缀标记为私有属性
         
     def validate_parameters(self, params: Dict) -> Tuple[bool, str]:
         """验证参数有效性"""
@@ -53,12 +57,9 @@ class LSTool(BaseTool):
         if not isinstance(params["path"], str):
             return False, "'path' 参数必须是字符串类型"
             
-        # 将相对路径转为绝对路径
-        path_str = params["path"]
-        if not os.path.isabs(path_str):
-            # 在实际应用中，我们会转换相对路径
-            # 但同时会提示用户应该提供绝对路径
-            return False, f"'path' 参数必须是绝对路径，收到的是相对路径: {path_str}"
+        path = params["path"]
+        if not path:
+            return False, "'path' 参数不能为空"
             
         return True, ""
         
@@ -181,17 +182,18 @@ class LSTool(BaseTool):
         return lines
         
     async def execute(self, params: Dict[str, Any]) -> ToolCallResult:
-        """执行目录列表操作
+        """执行目录列表操作"""
+        logging.info(f"LSTool execute called with params: {params}")
+        logging.info(f"Current work_dir: {self.work_dir}")
         
-        参数:
-            params: 包含path参数的字典
-            
-        返回:
-            工具调用结果
-        """
+        # 处理参数，支持直接传参和kwargs包装的情况
+        if "kwargs" in params:
+            params = params["kwargs"]
+        
         # 验证参数
         is_valid, error_msg = self.validate_parameters(params)
         if not is_valid:
+            logging.error(f"Parameter validation failed: {error_msg}")
             return ToolCallResult(
                 success=False,
                 result=None,
@@ -200,12 +202,21 @@ class LSTool(BaseTool):
         
         try:
             # 获取并处理路径
-            path_str = params["path"]
+            path_str = str(params.get("path", ""))
+            logging.info(f"Processing path: {path_str}")
+            
+            # 如果是相对路径，基于工作目录解析
+            if not os.path.isabs(path_str):
+                path_str = os.path.join(self.work_dir, path_str)
+                logging.info(f"Resolved absolute path: {path_str}")
+                
             path = Path(path_str).resolve()
+            logging.info(f"Final resolved path: {path}")
             
             # 检查权限
             has_permission, error_msg = self._check_search_permission(path)
             if not has_permission:
+                logging.error(f"Permission check failed: {error_msg}")
                 return ToolCallResult(
                     success=False,
                     result=None,
@@ -213,7 +224,9 @@ class LSTool(BaseTool):
                 )
             
             # 列出目录内容
-            files = self._list_directory(path, self._is_test)
+            logging.info("Starting to list directory contents")
+            files = self._list_directory(path, self.test_mode)
+            logging.info(f"Found {len(files)} files")
             
             # 构建树状结构
             tree = self._build_tree(files)
@@ -224,7 +237,7 @@ class LSTool(BaseTool):
             
             # 检查是否需要截断
             truncated = len(files) >= self.MAX_FILES
-            truncated_message = f"\n目录中文件数量超过 {self.MAX_FILES}，结果已被截断。请使用更具体的路径参数，或使用Bash工具探索嵌套目录。以下是前 {self.MAX_FILES} 个文件和目录：\n\n"
+            truncated_message = f"\n目录中文件数量超过 {self.MAX_FILES}，结果已被截断。请使用更具体的路径参数。以下是前 {self.MAX_FILES} 个文件和目录：\n\n"
             
             # 用户和助手的不同输出
             user_tree = tree_text
@@ -244,6 +257,7 @@ class LSTool(BaseTool):
                 "directory": str(path)
             }
             
+            logging.info("Successfully generated directory listing")
             return ToolCallResult(
                 success=True,
                 result=result,
@@ -251,28 +265,25 @@ class LSTool(BaseTool):
             )
             
         except PermissionError as e:
+            error_msg = f"权限错误: {str(e)}"
+            logging.error(error_msg)
             return ToolCallResult(
                 success=False,
                 result=None,
-                error=f"权限错误: {str(e)}"
+                error=error_msg
             )
         except Exception as e:
+            error_msg = f"列出目录内容失败: {str(e)}"
+            logging.error(error_msg)
+            logging.exception("Detailed error:")
             return ToolCallResult(
                 success=False,
                 result=None,
-                error=f"列出目录内容失败: {str(e)}"
+                error=error_msg
             )
     
     def _list_directory(self, path: Path, is_test: bool = False) -> List[str]:
-        """列出目录内容，支持递归和截断
-        
-        参数:
-            path: 要列出内容的目录路径
-            is_test: 是否为测试模式
-            
-        返回:
-            文件和目录路径的列表
-        """
+        """列出目录内容，支持递归和截断"""
         results = []
         queue = [str(path)]
         
@@ -285,7 +296,8 @@ class LSTool(BaseTool):
             
             # 添加除根目录外的所有目录
             if current_path != str(path):
-                rel_path = os.path.relpath(current_path, start=os.getcwd())
+                # 使用工作目录作为基准计算相对路径
+                rel_path = os.path.relpath(current_path, start=self.work_dir)
                 if not self.skip(rel_path):
                     if os.path.isdir(current_path):
                         results.append(rel_path + os.sep)
@@ -317,7 +329,8 @@ class LSTool(BaseTool):
                     if os.path.isdir(full_path):
                         queue.append(full_path)
                     else:
-                        rel_path = os.path.relpath(full_path, start=os.getcwd())
+                        # 使用工作目录作为基准计算相对路径
+                        rel_path = os.path.relpath(full_path, start=self.work_dir)
                         if not self.skip(rel_path):
                             results.append(rel_path)
                     
