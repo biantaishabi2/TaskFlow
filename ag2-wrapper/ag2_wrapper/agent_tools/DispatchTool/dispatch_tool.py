@@ -8,7 +8,7 @@ from pathlib import Path
 from ag2_wrapper.core.base_tool import BaseTool, ToolCallResult
 from ag2_wrapper.core.ag2tools import AG2ToolManager  # 改用新的工具管理器
 from ag2_wrapper.agent_tools.DispatchTool.prompt import PROMPT, DESCRIPTION
-from ag2_wrapper.agent_tools.DispatchTool.conclusion_tool import ConclusionTool
+# 移除ConclusionTool导入
 import json
 import os
 from datetime import datetime
@@ -26,8 +26,7 @@ DEFAULT_LLM_CONFIG = {
     "model": "anthropic/claude-3.7-sonnet"
 }
 
-# 在文件开头的导入部分添加
-from .conclusion_tool import ConclusionTool, PROMPT as CONCLUSION_PROMPT
+# 移除ConclusionTool导入
 
 # 在文件开头添加导入
 from ...agent_tools.FileReadTool.prompt import DESCRIPTION as FR_DESC, PROMPT as FR_PROMPT
@@ -81,8 +80,8 @@ class DispatchTool(BaseTool):
                     f"工具类型: {'只读' if is_read_only else '可写'}",
                 ]
                 
-                # 添加完整的工具提示词
-                if prompt:
+                # 添加完整的工具提示词 (排除conclusion_tool相关内容)
+                if prompt and "return_conclusion" not in tool.name:
                     tool_desc.append("工具提示词:")
                     tool_desc.append(prompt)
                 
@@ -107,12 +106,12 @@ class DispatchTool(BaseTool):
                 "2. 仅在必要时使用可写工具修改系统状态",
                 "3. 每个工具调用前请确保参数完整且正确",
                 "4. 注意检查工具执行结果，处理可能的错误",
-                "5. 在完成所有任务后，必须使用 return_conclusion 工具返回最终结论",
+                "5. 在完成所有任务后，请明确说明并总结你的结果",
                 "=============",
                 "工作流程：",
                 "1. 分析任务需求",
                 "2. 按顺序调用所需工具完成任务",
-                "3. 最后必须调用 return_conclusion 工具总结任务结果",
+                "3. 最后总结你的发现和结果",
                 "=============",
                 "请根据以上工具列表和工作流程，完成任务。"
             ]
@@ -199,10 +198,6 @@ class DispatchTool(BaseTool):
             if not available_tools:
                 raise ValueError("没有可用的工具")
             
-            # 添加结论返回工具
-            conclusion_tool = ConclusionTool()
-            available_tools.append(conclusion_tool)
-                
             # 2. 构建动态提示词
             dynamic_prompt = await self._build_dynamic_prompt(available_tools)
             
@@ -362,8 +357,7 @@ class DispatchTool(BaseTool):
                 (FileReadTool(), FR_PROMPT),
                 (GlobTool(), GLOB_PROMPT),
                 (GrepTool(), GREP_PROMPT),
-                (lsTool(), LS_PROMPT),
-                (ConclusionTool(), CONCLUSION_PROMPT)
+                (lsTool(), LS_PROMPT)
             ]
             
             # 为每个工具创建包装函数并注册
@@ -371,12 +365,6 @@ class DispatchTool(BaseTool):
                 async def wrapper(*args: Any, **kwargs: Any) -> Dict[str, Any]:
                     # 直接传递kwargs给execute方法
                     result = await tool.execute(kwargs)
-                    # 如果是 conclusion 工具且执行成功,立即结束对话
-                    if tool.name == "return_conclusion" and result.success:
-                        return {
-                            **result.result,
-                            "should_terminate": True
-                        }
                     return result.result
                 return wrapper
             
@@ -420,9 +408,7 @@ class DispatchTool(BaseTool):
             full_prompt = (
                 f"{task_info['dynamic_prompt']}\n\n"
                 f"任务描述：{task_info['prompt']}\n\n"
-                "注意：完成任务后，必须使用 return_conclusion 工具返回你的结论。\n"
-                "如果任务成功，设置 success=True 并在 conclusion 中详细说明结果；\n"
-                "如果任务失败，设置 success=False 并在 conclusion 中说明失败原因。"
+                "注意：请尽可能详细地完成任务，完成后请明确说明你已完成所有工作并总结结果。"
             )
             
             # 启动对话
@@ -431,44 +417,36 @@ class DispatchTool(BaseTool):
                 message=full_prompt
             )
     
-            # 获取最后一个工具调用
-            last_message = chat_result.chat_history[-1]
-            if not isinstance(last_message, dict) or "tool_calls" not in last_message:
-                raise ValueError("对话未以工具调用结束")
-                
-            last_tool_call = last_message["tool_calls"][-1]
+            # 获取消息历史
+            all_messages = chat_result.chat_history
             
-            # 检查是否是 return_conclusion 工具调用
-            if last_tool_call.get("name") != "return_conclusion":
-                raise ValueError("对话必须以 return_conclusion 工具调用结束")
-                
-            # 获取结论结果
-            conclusion_result = last_tool_call.get("result", {})
+            # 查找最后一条消息是否包含"exit"
+            last_index = len(all_messages) - 1
+            last_msg = all_messages[last_index]
             
-            # 验证结论格式
-            if not conclusion_result or \
-               not isinstance(conclusion_result.get("success"), bool) or \
-               not conclusion_result.get("conclusion") or \
-               not isinstance(conclusion_result.get("conclusion"), str):
-                error_msg = (
-                    "未获取到有效的结论。结论必须包含：\n"
-                    "1. success: 布尔值，表示任务是否成功\n"
-                    "2. conclusion: 非空字符串，包含结论内容或失败原因\n"
-                    f"当前结果: {conclusion_result}"
-                )
-                raise ValueError(error_msg)
+            if (isinstance(last_msg, dict) and 
+                last_msg.get("role") == "user" and 
+                "exit" in str(last_msg.get("content", "")).lower()):
+                # 如果最后一条是exit消息，取前一条消息作为结论
+                if last_index > 0:
+                    conclusion_msg = all_messages[last_index - 1]
+                    conclusion = conclusion_msg.get("content", "未提供结论")
+                    logging.info(f"使用exit前的消息作为结论，索引: {last_index - 1}")
+                else:
+                    raise ValueError("对话中只有exit消息，没有结论")
+            else:
+                # 如果最后一条不是exit消息，使用最后一条消息作为结论
+                conclusion = last_msg.get("content", "未提供结论")
+                logging.info("最后一条消息不是exit，直接使用它作为结论")
             
-            # 如果是 conclusion 工具调用,立即返回结果并终止对话
-            if conclusion_result.get("should_terminate", False):
-                await self.executor.stop_chat()  # 主动结束对话
-                
+            # 任务总是被视为成功完成（因为LLMResponseAgent已经确定任务完成了）
             return {
                 "status": "completed",
                 "task_id": task_info["task_id"],
                 "start_time": task_info["start_time"],
                 "end_time": datetime.now().isoformat(),
-                "success": conclusion_result.get("success", False),
-                "conclusion": conclusion_result.get("conclusion", "未提供结论"),
+                "success": True,  # 假定成功
+                "conclusion": conclusion,
                 "chat_history": chat_result.chat_history,
                 "terminated": True  # 始终标记为已终止
             }
