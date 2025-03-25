@@ -221,6 +221,9 @@ class TaskClaudeBridge(ClaudeBridge):
         """
         解析任务执行结果
         
+        OBSOLETE: 这个方法使用了不可靠的正则表达式解析方式，已被新的结构化输出处理取代
+        建议使用新的上下文管理机制
+        
         参数:
             interactions (list): 交互记录
             task_context (dict): 任务上下文

@@ -322,6 +322,9 @@ class TaskExecutor:
         """
         处理直接执行结果，提取关键信息
         
+        OBSOLETE: 这个方法使用了不可靠的正则表达式解析方式，已被新的结构化输出处理取代
+        建议使用新的上下文管理机制
+        
         参数:
             response (dict): Claude CLI的响应
             subtask (dict): 子任务定义

@@ -35,7 +35,7 @@ DEFAULT_SYSTEM_PROMPT = """你是一个有帮助的AI助手。
 当一切完成后，在最后回复"TERMINATE"。
 
 ## 可用工具列表
-
+调用工具前请用文字先说明你要调用什么工具，以及为什么调用，不要直接调用工具。
 {TOOLS_SECTION}
 """
 
@@ -50,32 +50,41 @@ class AG2TwoAgentExecutor:
     read_timestamps: Dict[str, float]
     
     def __init__(self,
-                 config: ConfigManager,
-                 tool_manager: AG2ToolManager = None):
+                 config: ConfigManager = None,
+                 tool_manager: AG2ToolManager = None,
+                 context_manager = None):
         """初始化双代理执行器
         
         Args:
             config: 配置对象
             tool_manager: 工具管理器（可选）
+            context_manager: 上下文管理器（可选，用于与TaskExecutor接口兼容）
         """
-        self.config = config
+        self.config = config or ConfigManager()
         self.tool_manager = tool_manager or AG2ToolManager()
         
-        # 初始化上下文管理器
-        self.context_manager = TaskContext("default")
+        # 初始化上下文管理器（允许从外部传入）
+        if context_manager:
+            self.context_manager = context_manager
+        else:
+            self.context_manager = TaskContext("default")
         
         # 初始化工具加载器
         self.tool_loader = ToolLoader()
         
         # 使用标准配置格式
+
         self.llm_config = {
             "config_list": [{
                 "model": "anthropic/claude-3.5-sonnet",
+                # "model": "deepseek-chat",
                 "api_key": os.environ.get("OPENROUTER_API_KEY"),
+                # "api_key": os.environ.get("DEEPSEEK_API_KEY"),
                 "base_url": "https://openrouter.ai/api/v1",
+                # "base_url": "https://api.deepseek.com",
                 "api_type": "openai"
             }],
-            "temperature": 0.4,
+            "temperature": 0.3,
             "timeout": 500
         }
         
