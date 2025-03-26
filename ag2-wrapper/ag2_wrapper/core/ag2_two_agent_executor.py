@@ -2,6 +2,32 @@
 AG2 Two Agent Executor
 基于 AG2 Wrapper 的双代理执行器实现
 用于适配 TaskExecutor 的任务执行接口
+
+关于任务上下文(task_context)的使用说明：
+1. 目前 task_context 为空，要启用任务间上下文传递功能，需要：
+   - 从 task_context_prompts.py 获取提示词模板
+   - 使用 get_context_prompt(task_id, step_id, parent_step_id) 生成上下文提示词
+
+2. 添加方式有两种：
+   a) 在实例化时通过参数传入：
+      ```python
+      executor = AG2TwoAgentExecutor(
+          config=config,
+          tool_manager=tool_manager,
+          context_manager=context_manager,
+          task_context=get_context_prompt(task_id, step_id, parent_step_id)
+      )
+      ```
+   
+   b) 在初始化时设置：
+      ```python
+      def __init__(self, ..., task_context: str = ""):
+          self.task_context = task_context
+      ```
+      
+3. 更新方式：
+   - 在需要更新时调用 update_system_message() 方法
+   - 传入新的 task_context 值
 """
 
 from autogen import AssistantAgent, register_function
@@ -147,6 +173,9 @@ DEFAULT_SYSTEM_PROMPT = """
 # 上下文管理
 {CONTEXT_INFO}
 
+# 任务上下文管理
+{task_context}
+
 # 命令执行说明
 在执行每个命令之前，你需要用一句话简要说明将要执行什么命令以及目的。格式如下：
 
@@ -176,13 +205,15 @@ class AG2TwoAgentExecutor:
     def __init__(self,
                  config: ConfigManager = None,
                  tool_manager: AG2ToolManager = None,
-                 context_manager = None):
+                 context_manager = None,
+                 task_context: str = ""):
         """初始化双代理执行器
         
         Args:
             config: 配置对象
             tool_manager: 工具管理器（可选）
             context_manager: 上下文管理器（可选，用于与TaskExecutor接口兼容）
+            task_context: 任务上下文
         """
         self.config = config or ConfigManager()
         self.tool_manager = tool_manager or AG2ToolManager()
@@ -220,6 +251,8 @@ class AG2TwoAgentExecutor:
         
         # 添加路径标准化辅助函数
         self.normalize_path = lambda p: str(Path(p).resolve())
+        
+        self.task_context = task_context
 
     async def initialize(self):
         """异步初始化方法"""
@@ -234,6 +267,7 @@ class AG2TwoAgentExecutor:
             SECURITY_WARNINGS=self._build_security_warnings(),
             ENV_INFO=self._build_env_info(),
             CONTEXT_INFO=await self._build_context_info(),
+            task_context=self.task_context,  
             TOOLS_SECTION=self._build_tools_prompt([]),  # 初始为空，后续更新
             BASH_PROMPT=BASH_PROMPT
         )
@@ -254,6 +288,7 @@ class AG2TwoAgentExecutor:
             SECURITY_WARNINGS=self._build_security_warnings(),
             ENV_INFO=self._build_env_info(),
             CONTEXT_INFO=await self._build_context_info(),
+            task_context=self.task_context,  
             TOOLS_SECTION=self._build_tools_prompt(tools),
             BASH_PROMPT=BASH_PROMPT
         )
@@ -265,9 +300,10 @@ class AG2TwoAgentExecutor:
     async def create(cls,
                     config: ConfigManager = None,
                     tool_manager: AG2ToolManager = None,
-                    context_manager = None) -> 'AG2TwoAgentExecutor':
+                    context_manager = None,
+                    task_context: str = "") -> 'AG2TwoAgentExecutor':
         """创建并初始化执行器的工厂方法"""
-        executor = cls(config, tool_manager, context_manager)
+        executor = cls(config, tool_manager, context_manager, task_context)
         await executor.initialize()
         return executor
 
