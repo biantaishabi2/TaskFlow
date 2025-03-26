@@ -1,52 +1,38 @@
-# MCP 客户端重构设计文档
+# MCP 客户端实现与重构说明
 
-## 当前架构分析
+## 实现概述
 
-### 主要文件及职责
-1. **核心文件**
-   - `mcpClient.ts`: 主客户端逻辑，管理服务器连接和功能集成
+MCPTool 是一个适配层工具，将 MCP (Model Context Protocol) 服务器的工具转换为 AG2 Executor 可调用的格式。该工具已实现两个版本的客户端，分别是：
 
-2. **辅助文件**
-   - `config.ts`: 
-     * 多作用域配置(项目/全局/mcprc)
-     * 类型安全的配置访问  
-     * 配置持久化到JSON文件
-     * 内存缓存机制
+1. **原始客户端 (`client.py`)**
+   - 约1000行代码
+   - 包含自定义传输层和协议处理
+   - 支持SSE和Stdio两种传输方式（但SSE支持有限）
 
-### 核心功能模块
-1. **服务器管理**
-   - 多作用域配置（项目/全局/mcprc）
-   - 增删查改接口
+2. **纯SDK客户端 (`client_sdk.py`)**
+   - 约500行代码
+   - 完全基于官方MCP SDK实现
+   - 更简洁、可靠，但目前只支持Stdio传输
 
-2. **连接管理**
-   - 两种传输方式（SSE/Stdio）
-   - 连接超时机制
-   - 错误处理和日志
+## 主要组件
 
-3. **功能集成**
-   - 工具系统集成
-   - 命令系统集成
-   - 能力协商机制
-
-### 当前TypeScript实现特点
-- 强类型接口
-- 基于Promise的异步模型
-- 模块化设计
-- 客户端缓存机制
-
-## Python重构设计方案
-
-### 1. 文件结构调整建议
+### 1. 文件结构
 ```
 MCPTool/
-├── __init__.py
-├── MCPTool.py          # 适配层主类，转换MCP工具为AG2格式
-├── client.py           # MCP客户端逻辑
-└── config.py           # 配置管理
+├── __init__.py                # 包导出和客户端版本选择
+├── MCPTool.py                 # 适配层主类，转换MCP工具为AG2格式
+├── client.py                  # 原始MCP客户端实现
+├── client_sdk.py              # 纯SDK实现的新版客户端
+├── config.py                  # 配置管理
+└── test_basic.py              # 基础功能测试
+```
 
-### 2. 配置管理实现
+### 2. 配置管理实现 (`config.py`)
+
+已完成的配置系统使用Pydantic进行模型定义：
+
 ```python
-# 使用Pydantic进行配置建模
+# 服务器配置模型
 class McpServerConfig(BaseModel):
     type: Literal["stdio", "sse"]
     command: Optional[str] = None
@@ -54,90 +40,179 @@ class McpServerConfig(BaseModel):
     env: Optional[Dict[str, str]] = None
     url: Optional[str] = None  # For SSE
 
-class ProjectConfig(BaseModel):
-    mcp_servers: Dict[str, McpServerConfig] = Field(default_factory=dict)
-
-# 配置持久化使用TOML格式替代JSON
-def save_config(config: BaseModel, path: Path):
-    with open(path, "w") as f:
-        toml.dump(config.dict(), f)
-```
-
-### 4. 类结构设计
-
-```python
-class MCPServer:
-    def __init__(self, name: str, config: dict):
-        self.name = name
-        self.config = config
-        self._client: Optional[Client] = None
-
-class MCPClientManager:
-    def __init__(self):
-        self.servers: Dict[str, MCPServer] = {}
-        self._connection_timeout = 5.0  # 可配置
-        
-    async def connect_all(self) -> List[MCPServer]:
-        """连接所有服务器"""
-        pass
-```
-
-### 2. 关键接口定义
-
-```python
 # 配置管理接口
 def add_server(name: str, config: dict, scope="project") -> None
 def remove_server(name: str, scope="project") -> None
 def list_servers() -> Dict[str, dict]
-
-# 连接接口  
-async def connect(server: MCPServer) -> Client
-async def call_tool(server_name: str, tool_name: str, args: dict) -> dict
+def get_server(name: str) -> Optional[dict]
 ```
 
-### 3. Python特有优化
+### 3. 核心客户端类 (`client_sdk.py`)
 
-1. **异步处理**：
-   - 使用asyncio替代Promise链
-   - 支持SSE的异步流式处理
+```python
+class MCPServer:
+    """MCP服务器连接，纯SDK实现"""
+    
+    def __init__(self, name: str, config: dict):
+        self.name = name
+        self.config = config
+        self.session = None
+        self._tools_cache = None
+        self._exit_stack = AsyncExitStack()
+        self._lock = asyncio.Lock()
+        self._connected = False
+    
+    async def connect(self) -> None: ...
+    async def disconnect(self) -> None: ...
+    async def call(self, method: str, params: Optional[Dict[str, Any]] = None) -> Any: ...
+    async def list_tools(self) -> List[Dict[str, Any]]: ...
+    async def execute_tool(self, tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]: ...
 
-2. **配置管理**：
-   - 使用Pydantic进行配置验证
-   - 支持.env文件配置
+class MCPClient:
+    """MCP客户端管理类"""
+    
+    def __init__(self):
+        self.servers: Dict[str, MCPServer] = {}
+        self._exit_stack = AsyncExitStack()
+        self._global_lock = asyncio.Lock()
+        self._initialized = False
+    
+    async def initialize(self) -> None: ...
+    async def connect_server(self, name: str) -> MCPServer: ...
+    async def disconnect_all(self) -> None: ...
+    async def list_all_tools(self) -> Dict[str, List[Dict[str, Any]]]: ...
+    async def execute_tool(self, server_name: str, tool_name: str, args: Dict[str, Any]) -> Dict[str, Any]: ...
+```
 
-3. **错误处理**：
-   - 自定义异常体系
-   - 重试机制装饰器
+### 4. 适配层 (`MCPTool.py`)
 
-## 迁移路线图
+```python
+class MCPTool:
+    """MCP工具适配器"""
+    
+    def __init__(self, client: MCPClient):
+        self.client = client
+        self._tools_cache = None
+    
+    async def get_tools(self) -> List[Dict[str, Any]]: ...
+    async def register_tools(self, register_func: Callable) -> int: ...
+    async def execute(self, tool_name: str, parameters: Dict[str, Any]) -> Dict[str, Any]: ...
+```
 
-1. **第一阶段**：功能对等实现
-   - 保持现有接口不变
-   - 实现核心管理类
+## 功能实现状态
 
-2. **第二阶段**：Python优化
-   - 引入异步IO
-   - 添加类型注解
-   - 性能优化
+1. **配置管理系统** ✅
+   - 多作用域配置支持（项目/全局/mcprc）
+   - 基于Pydantic的类型安全配置
+   - 服务器配置CRUD接口
 
-3. **第三阶段**：功能扩展
-   - 添加gRPC支持
-   - 实现热重载
-   - 增强监控指标
+2. **MCP客户端** ✅
+   - **Stdio传输方式** ✅ - 完全支持并经过测试
+   - **SSE传输方式** ⚠️ - 有限支持，仅旧版客户端中实现，未经全面测试
+   - 异步通信协议
+   - 服务器连接和断开管理
+   - 双版本实现（旧版和SDK版）
 
-## 注意事项
+3. **AG2适配层** ✅
+   - MCP工具到AG2格式的转换
+   - 工具发现和描述获取
+   - 工具调用和结果处理
 
-1. **差异处理**：
-   - Node.js的process.env → Python的os.environ
-   - 文件系统操作差异（fs → pathlib）
-   - 日志系统替换
+4. **资源管理** ✅
+   - 使用AsyncExitStack确保资源正确释放
+   - 进程管理与错误恢复
+   - 超时保护和异常处理
 
-2. **测试策略**：
-   - 保持接口测试不变
-   - 添加Python特有单元测试
-   - 集成测试覆盖所有传输方式
+## 优化历程
 
-3. **性能考量**：
-   - 连接池管理
-   - 序列化优化
-   - GIL处理方案
+1. **初始实现**
+   - 创建基础客户端和服务器接口
+   - 实现配置管理系统
+   - 添加SSE和Stdio传输层
+   - 实现基本的工具调用
+
+2. **资源管理优化**
+   - 修复进程清理问题
+   - 添加AsyncExitStack管理资源
+   - 改进错误处理和超时控制
+
+3. **SDK整合**
+   - 对照SDK示例重构连接逻辑
+   - 创建纯SDK实现的client_sdk.py
+   - 添加版本选择机制
+
+4. **测试与验证**
+   - 实现测试脚本
+   - 验证工具列表获取和执行
+   - 测试资源清理流程
+
+## 当前局限性
+
+1. **SSE支持**
+   - SDK版本尚不支持SSE连接
+   - 旧版有限支持SSE但缺少全面测试
+
+2. **未实现的高级功能**
+   - gRPC支持
+   - 热重载
+   - 监控指标
+
+3. **测试覆盖**
+   - 单元测试覆盖率有限
+   - 主要依赖集成测试
+
+## 下一步计划
+
+1. **SSE支持完善**
+   - 为SDK版本实现SSE支持
+   - 编写SSE服务器测试用例
+
+2. **增强测试覆盖**
+   - 添加单元测试
+   - 扩展测试场景
+
+3. **文档更新**
+   - 保持文档与实现的一致性
+   - 提供更详细的使用指南
+
+4. **性能优化**
+   - 添加连接池管理
+   - 优化序列化过程
+
+## 使用建议
+
+1. **首选SDK版客户端**
+   ```python
+   # 设置环境变量选择SDK版（默认）
+   os.environ["MCP_USE_SDK_CLIENT"] = "1"
+   
+   # 或在程序启动前保持默认值（默认为SDK版）
+   ```
+
+2. **连接Stdio服务器**
+   ```python
+   # 配置服务器
+   add_server("my_stdio_server", {
+       "type": "stdio",
+       "command": "python",
+       "args": ["-m", "my_mcp_server"],
+       "env": {"DEBUG": "1"}
+   })
+   
+   # 连接服务器
+   client = MCPClient()
+   server = await client.connect_server("my_stdio_server")
+   ```
+
+3. **适当的资源管理**
+   ```python
+   try:
+       # 使用客户端
+       tools = await server.list_tools()
+       result = await server.execute_tool("tool_name", {"param": "value"})
+   finally:
+       # 确保断开连接
+       await client.disconnect_all()
+   ```
+
+注: ✅表示已完成且稳定，⚠️表示部分完成或有限制，❌表示未完成
