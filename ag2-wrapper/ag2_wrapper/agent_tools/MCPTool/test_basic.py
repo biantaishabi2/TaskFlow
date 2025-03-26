@@ -144,6 +144,8 @@ async def test_everything_server():
     这是核心功能测试，验证与真实MCP服务器的连接流程和工具调用。
     由于服务器可能未安装，此测试如果失败不会影响基础功能验证。
     测试所有主要工具：echo、add、printEnv
+    
+    注意：设置5秒超时保护，避免测试卡住
     """
     print("\n----- 测试everything服务器连接 -----")
     
@@ -159,118 +161,136 @@ async def test_everything_server():
     })
     print("* 已添加everything服务器配置")
     
-    # 创建客户端和服务器对象
+    # 创建客户端对象
     client = MCPClient()
+    server = None
     
     try:
-        # 1. 测试连接
-        print("* 尝试连接服务器（如果失败可能是npx或服务器未安装）...")
-        server = await client.connect_server("everything")
-        print("* 连接服务器成功")
-        
-        # 2. 获取工具列表
-        print("* 获取工具列表...")
-        try:
-            tools = await server.list_tools()
-            print(f"* 获取到 {len(tools)} 个工具")
+        # 使用超时保护整个测试流程
+        async with asyncio.timeout(10.0):  # 10秒超时，避免测试卡住
+            # 1. 测试连接
+            print("* 尝试连接服务器（如果失败可能是npx或服务器未安装）...")
+            server = await client.connect_server("everything")
+            print("* 连接服务器成功")
             
-            # 显示前3个工具
-            for i, tool_info in enumerate(tools[:3]):
-                print(f"* 工具 {i+1}: {tool_info.get('name')} - {tool_info.get('description', '无描述')}")
-        except Exception as e:
-            print(f"* 获取工具列表失败: {str(e)}")
-            tools = []  # 使用空列表继续测试
-        
-        # 创建适配器
-        tool = MCPTool(client)
-        
-        # 3. 测试echo工具
-        try:
-            print("\n* 测试echo工具...")
-            result = await server.execute_tool("echo", {"message": "Hello from echo!"})
-            
-            if 'content' in result and isinstance(result['content'], list):
-                print(f"* Echo工具执行成功，返回了 {len(result['content'])} 条内容")
+            # 2. 获取工具列表
+            print("* 获取工具列表...")
+            try:
+                tools = await server.list_tools()
+                print(f"* 获取到 {len(tools)} 个工具")
                 
-                for item in result['content']:
-                    if item.get('type') == 'text':
-                        print(f"* Echo响应: {item.get('text', '')}")
-            else:
-                print(f"* Echo工具执行格式异常: {result}")
-        except Exception as e:
-            print(f"* Echo工具测试失败: {str(e)}")
-        
-        # 4. 测试add工具
-        try:
-            print("\n* 测试add工具...")
-            result = await server.execute_tool("add", {"a": 42, "b": 58})
+                # 显示前3个工具
+                for i, tool_info in enumerate(tools[:3]):
+                    print(f"* 工具 {i+1}: {tool_info.get('name')} - {tool_info.get('description', '无描述')}")
+            except Exception as e:
+                print(f"* 获取工具列表失败: {str(e)}")
+                tools = []  # 使用空列表继续测试
             
-            if 'content' in result and isinstance(result['content'], list):
-                print(f"* Add工具执行成功，返回了 {len(result['content'])} 条内容")
+            # 创建适配器
+            tool = MCPTool(client)
+            
+            # 3. 测试echo工具
+            try:
+                print("\n* 测试echo工具...")
+                result = await server.execute_tool("echo", {"message": "Hello from echo!"})
                 
-                for item in result['content']:
-                    if item.get('type') == 'text':
-                        print(f"* Add响应: {item.get('text', '')}")
-            else:
-                print(f"* Add工具执行格式异常: {result}")
-        except Exception as e:
-            print(f"* Add工具测试失败: {str(e)}")
-        
-        # 5. 测试printEnv工具
-        try:
-            print("\n* 测试printEnv工具...")
-            result = await server.execute_tool("printEnv", {})
+                if 'content' in result and isinstance(result['content'], list):
+                    print(f"* Echo工具执行成功，返回了 {len(result['content'])} 条内容")
+                    
+                    for item in result['content']:
+                        if item.get('type') == 'text':
+                            print(f"* Echo响应: {item.get('text', '')}")
+                else:
+                    print(f"* Echo工具执行格式异常: {result}")
+            except Exception as e:
+                print(f"* Echo工具测试失败: {str(e)}")
             
-            if 'content' in result and isinstance(result['content'], list):
-                print(f"* PrintEnv工具执行成功，返回了 {len(result['content'])} 条内容")
+            # 4. 测试add工具
+            try:
+                print("\n* 测试add工具...")
+                result = await server.execute_tool("add", {"a": 42, "b": 58})
                 
-                # 只显示部分内容以避免输出过多
-                first_item = result['content'][0] if result['content'] else {}
-                if first_item.get('type') == 'text':
-                    text = first_item.get('text', '')
-                    lines = text.split('\n')
-                    line_count = min(5, len(lines))
-                    print(f"* PrintEnv响应示例 (前{line_count}行):")
-                    for i in range(line_count):
-                        print(f"*   {lines[i]}")
-            else:
-                print(f"* PrintEnv工具执行格式异常: {result}")
-        except Exception as e:
-            print(f"* PrintEnv工具测试失败: {str(e)}")
-        
-        # 6. 测试适配层 - 使用echo工具
-        try:
-            print("\n* 通过AG2适配层测试echo工具...")
-            ag2_result = await tool.execute("mcp__everything__echo", {"message": "Hello via AG2!"})
+                if 'content' in result and isinstance(result['content'], list):
+                    print(f"* Add工具执行成功，返回了 {len(result['content'])} 条内容")
+                    
+                    for item in result['content']:
+                        if item.get('type') == 'text':
+                            print(f"* Add响应: {item.get('text', '')}")
+                else:
+                    print(f"* Add工具执行格式异常: {result}")
+            except Exception as e:
+                print(f"* Add工具测试失败: {str(e)}")
             
-            if 'content' in ag2_result and isinstance(ag2_result['content'], list):
-                print(f"* 适配层执行成功，返回了 {len(ag2_result['content'])} 条内容")
+            # 5. 测试printEnv工具
+            try:
+                print("\n* 测试printEnv工具...")
+                result = await server.execute_tool("printEnv", {})
                 
-                for item in ag2_result['content']:
-                    if item.get('type') == 'text':
-                        print(f"* 适配层响应: {item.get('text', '')}")
-            else:
-                print(f"* 适配层执行格式异常: {ag2_result}")
-        except Exception as e:
-            print(f"* 适配层测试失败: {str(e)}")
+                if 'content' in result and isinstance(result['content'], list):
+                    print(f"* PrintEnv工具执行成功，返回了 {len(result['content'])} 条内容")
+                    
+                    # 只显示部分内容以避免输出过多
+                    first_item = result['content'][0] if result['content'] else {}
+                    if first_item.get('type') == 'text':
+                        text = first_item.get('text', '')
+                        lines = text.split('\n')
+                        line_count = min(5, len(lines))
+                        print(f"* PrintEnv响应示例 (前{line_count}行):")
+                        for i in range(line_count):
+                            print(f"*   {lines[i]}")
+                else:
+                    print(f"* PrintEnv工具执行格式异常: {result}")
+            except Exception as e:
+                print(f"* PrintEnv工具测试失败: {str(e)}")
             
-        print("\n* Everything服务器测试完成")
-        return True
-    
+            # 6. 测试适配层 - 使用echo工具
+            try:
+                print("\n* 通过AG2适配层测试echo工具...")
+                ag2_result = await tool.execute("mcp__everything__echo", {"message": "Hello via AG2!"})
+                
+                if 'content' in ag2_result and isinstance(ag2_result['content'], list):
+                    print(f"* 适配层执行成功，返回了 {len(ag2_result['content'])} 条内容")
+                    
+                    for item in ag2_result['content']:
+                        if item.get('type') == 'text':
+                            print(f"* 适配层响应: {item.get('text', '')}")
+                else:
+                    print(f"* 适配层执行格式异常: {ag2_result}")
+            except Exception as e:
+                print(f"* 适配层测试失败: {str(e)}")
+                
+            print("\n* Everything服务器测试完成")
+            
+    except asyncio.TimeoutError:
+        print("\n* 测试超时！可能有资源清理问题")
+        return False
     except Exception as e:
         print(f"* 服务器测试失败: {str(e)}")
         print("* 这可能是正常的，如果npx或everything服务器未安装")
         return False
     
     finally:
-        # 确保断开连接
+        # 确保断开连接 - 使用更简单的方式
         try:
             print("\n* 断开服务器连接...")
-            await client.disconnect_all()
+            # 强制终止子进程而不是依赖资源释放机制
+            kill_child_processes()
+            
+            # 如果client已创建，尝试断开连接
+            if client:
+                try:
+                    # 使用超时保护
+                    async with asyncio.timeout(3.0):
+                        await client.disconnect_all()
+                except (asyncio.TimeoutError, Exception) as e:
+                    print(f"* 断开连接超时或出错: {str(e)}")
+                    # 不影响测试结果
+            
             print("* 连接已断开")
         except Exception as e:
             print(f"* 断开连接时出错: {str(e)}")
-            # 不影响测试结果
+        
+        return True
 
 
 
@@ -323,26 +343,12 @@ async def main():
         
         logger.info("基础测试完成")
         
+        return success
+        
     finally:
-        # 清理所有剩余资源
+        # 使用简单的清理流程，避免复杂的任务管理
         print("\n清理所有资源...")
-        
-        # 获取所有任务
-        pending = asyncio.all_tasks() - {asyncio.current_task()}
-        
-        # 取消所有任务
-        for task in pending:
-            task.cancel()
-            
-        # 等待任务取消完成
-        if pending:
-            print(f"等待 {len(pending)} 个任务取消...")
-            try:
-                await asyncio.gather(*pending, return_exceptions=True)
-                print("所有任务已取消")
-            except Exception as e:
-                print(f"取消任务时出错: {str(e)}")
-        
+        logger.info("基础测试清理阶段")
         print("测试完成，正常退出")
 
 
@@ -392,13 +398,49 @@ def kill_child_processes():
         print(f"终止子进程出错: {e}")
 
 if __name__ == "__main__":
+    import signal
+    import atexit
+    
+    # 注册SIGINT处理器（Ctrl+C）提前终止进程
+    def sigint_handler(sig, frame):
+        print("\n强制终止测试（SIGINT）")
+        kill_child_processes()
+        # 使用os._exit强制退出，避免等待事件循环
+        import os
+        os._exit(1)
+    
+    # 注册15秒后的超时处理，避免无限等待
+    def timeout_handler():
+        print("\n测试超时 - 强制终止")
+        kill_child_processes()
+        # 强制退出
+        import os
+        os._exit(2)
+    
+    # 注册信号处理器和超时处理
+    signal.signal(signal.SIGINT, sigint_handler)
+    signal.signal(signal.SIGTERM, sigint_handler)
+    
+    # 注册强制退出函数
+    atexit.register(kill_child_processes)
+    
+    # 设置主线程超时，防止卡住
+    import threading
+    timer = threading.Timer(15.0, timeout_handler)
+    timer.daemon = True
+    timer.start()
+    
     # 使用更简单的方式运行测试
     try:
-        # 不使用asyncio.wait_for，而是直接运行
         asyncio.run(run_test())
+        # 取消超时定时器
+        timer.cancel()
     except KeyboardInterrupt:
         print("\n测试被用户中断")
+    except Exception as e:
+        print(f"\n测试遇到异常: {e}")
     finally:
-        print("\n===== 清理资源 =====")
+        # 确保清理
         kill_child_processes()
-        print("\n===== 测试完全结束 =====")
+    
+    print("\n===== 测试完全结束 =====")

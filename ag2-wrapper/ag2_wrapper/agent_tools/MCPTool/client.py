@@ -479,18 +479,50 @@ class MCPServer:
                 if self._session:
                     # 使用SDK会话方式
                     logger.info(f"使用SDK获取工具列表: {self.name}")
-                    tools_response = await self._session.list_tools()
-                    tools = []
-                    
-                    if isinstance(tools_response, list):
-                        for item in tools_response:
-                            if isinstance(item, tuple) and item[0] == "tools":
-                                for tool in item[1]:
-                                    tools.append({
-                                        "name": tool.name,
-                                        "description": tool.description,
-                                        "parameters": getattr(tool, "inputSchema", {})
-                                    })
+                    try:
+                        tools_response = await self._session.list_tools()
+                        # 日志记录工具响应类型，辅助调试
+                        logger.info(f"工具响应类型: {type(tools_response)}")
+                        tools = []
+                        
+                        # 处理各种可能的工具响应格式
+                        if hasattr(tools_response, 'tools'):
+                            # 直接属性
+                            for tool in tools_response.tools:
+                                tools.append({
+                                    "name": tool.name,
+                                    "description": tool.description,
+                                    "parameters": getattr(tool, "inputSchema", {})
+                                })
+                                
+                        elif isinstance(tools_response, list):
+                            # 列表格式
+                            for item in tools_response:
+                                if isinstance(item, tuple) and len(item) > 1 and item[0] == "tools":
+                                    for tool in item[1]:
+                                        tools.append({
+                                            "name": tool.name,
+                                            "description": tool.description,
+                                            "parameters": getattr(tool, "inputSchema", {})
+                                        })
+                        
+                        # 特殊处理：直接提取SDK对象内容
+                        if not tools and hasattr(tools_response, '__dict__'):
+                            logger.info(f"使用SDK对象提取: {tools_response.__dict__}")
+                            # 尝试提取可能的工具列表
+                            for key, value in tools_response.__dict__.items():
+                                if isinstance(value, list) and value and hasattr(value[0], 'name'):
+                                    for tool in value:
+                                        tools.append({
+                                            "name": tool.name,
+                                            "description": getattr(tool, "description", ""),
+                                            "parameters": getattr(tool, "inputSchema", {})
+                                        })
+                        
+                        logger.info(f"解析得到 {len(tools)} 个工具")
+                    except Exception as e:
+                        logger.error(f"解析工具列表出错: {str(e)}")
+                        tools = []
                 else:
                     # 使用自定义传输方式
                     result = await self._transport.send_request(method, params)
@@ -530,7 +562,7 @@ class MCPServer:
                     return {"content": [{"type": "text", "text": str(result)}]}
             else:
                 # 其他方法根据可用会话方式处理
-                logger.warning(f"调用未专门处理的方法: {method}")
+                logger.info(f"调用方法: {method}")
                 
                 if self._session and hasattr(self._session, 'call_method'):
                     # 使用SDK通用调用
@@ -706,7 +738,7 @@ class MCPServer:
     async def disconnect(self) -> None:
         """断开连接并清理资源
         
-        遵循simple-chatbot示例实现方式，简化资源清理过程。
+        完全遵循SDK实现方式，简单直接地调用exit_stack.aclose()。
         """
         async with self._lock:
             if not self._connected and not self._session and not self._transport:
@@ -717,35 +749,21 @@ class MCPServer:
             # 标记为已断开
             self._connected = False
             
+            # 释放引用，避免循环引用
+            self._session = None
+            self._transport = None
+            self._tools_cache = None
+            
+            # 直接关闭exit_stack，不使用额外的包装或超时
             try:
-                # 使用exit_stack清理所有资源
-                logger.info(f"开始清理所有资源: {self.name}")
-                
-                # 先置空引用，避免循环引用
-                self._session = None
-                self._transport = None
-                self._tools_cache = None
-                
-                # 使用超时保护
-                try:
-                    await asyncio.wait_for(
-                        self._exit_stack.aclose(),
-                        timeout=5.0
-                    )
-                    logger.info(f"服务器资源已清理: {self.name}")
-                except asyncio.TimeoutError:
-                    logger.warning(f"服务器资源清理超时: {self.name}")
-                except Exception as e:
-                    logger.error(f"服务器资源清理出错: {str(e)}")
-            finally:
-                # 重置状态
-                self._exit_stack = AsyncExitStack()
-                
-                # 请求垃圾回收
-                import gc
-                gc.collect()
-                
-                logger.info(f"服务器 {self.name} 断开连接完成")
+                await self._exit_stack.aclose()
+                logger.info(f"服务器 {self.name} 资源已清理")
+            except Exception as e:
+                logger.error(f"清理 {self.name} 资源出错: {str(e)}")
+            
+            # 创建新的exit_stack供下次使用
+            self._exit_stack = AsyncExitStack()
+            logger.info(f"服务器 {self.name} 断开连接完成")
     
 class _TransportContextManager:
     """用于将Transport对象与AsyncExitStack一起使用的上下文管理器封装类"""
@@ -876,7 +894,8 @@ class MCPClient:
     async def disconnect_all(self) -> None:
         """断开所有服务器连接，并清理资源
         
-        遵循simple-chatbot示例实现方式，使用任务并行清理。
+        完全按照SDK示例中的ChatSession.cleanup_servers实现：
+        顺序关闭服务器，避免并行执行带来的竞态问题。
         """
         async with self._global_lock:
             logger.info("开始断开所有服务器连接")
@@ -885,32 +904,23 @@ class MCPClient:
                 logger.info("没有需要断开的服务器")
                 return
             
-            # 创建清理任务
-            cleanup_tasks = []
+            # 按照SDK示例，顺序断开每个服务器，而非并行
             for name, server in self.servers.items():
-                logger.info(f"准备断开服务器: {name}")
-                task = asyncio.create_task(server.disconnect())
-                cleanup_tasks.append(task)
-            
-            # 并行等待所有断开任务完成
-            if cleanup_tasks:
                 try:
-                    # 使用gather允许捕获所有异常
-                    await asyncio.gather(*cleanup_tasks, return_exceptions=True)
-                    logger.info("所有服务器已断开连接")
+                    logger.info(f"断开服务器: {name}")
+                    await server.disconnect()
+                    logger.info(f"服务器 {name} 已断开")
                 except Exception as e:
-                    logger.warning(f"断开服务器连接时发生异常: {str(e)}")
+                    # 记录错误但继续断开其他服务器
+                    logger.warning(f"断开服务器 {name} 时出错: {str(e)}")
             
             # 清理服务器字典
             self.servers.clear()
             logger.info("服务器字典已清空")
             
-            # 重置退出栈
+            # 重置退出栈 - 直接调用，不使用额外的包装
+            await self._exit_stack.aclose()
             self._exit_stack = AsyncExitStack()
-            
-            # 强制垃圾回收
-            import gc
-            gc.collect()
             
             # 重置初始化状态
             self._initialized = False
