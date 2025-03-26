@@ -140,17 +140,46 @@ class MCPServer:
     async def _connect_sse(self) -> None:
         """使用SSE连接服务器
         
-        尝试使用SDK的SSE实现，如果不支持则提示错误。
+        基于SDK的sse_client实现SSE连接。
         """
         try:
-            # 检查SDK是否支持SSE
-            try:
-                from mcp.client.sse import sse_client
-                # TODO: 实现SDK的SSE连接
-                raise NotImplementedError("SDK的SSE连接未完全实现")
-            except (ImportError, NotImplementedError):
-                # SDK可能不支持SSE，或者实现不完整
-                raise NotImplementedError("SDK不支持SSE连接方式，请使用stdio连接")
+            # 导入SDK组件
+            from mcp import ClientSession
+            from mcp.client.sse import sse_client
+            
+            # 获取配置参数
+            url = self.config.get("url")
+            if not url:
+                raise ValueError("SSE连接缺少必要的URL参数")
+            
+            # 设置请求头（可选）
+            headers = self.config.get("headers", {})
+            
+            # 使用SDK的SSE客户端连接
+            logger.info(f"使用SDK sse_client连接服务器: {self.name}, URL: {url}")
+            
+            # 设置超时参数
+            timeout = float(self.config.get("timeout", 5.0))  # 连接超时
+            sse_read_timeout = float(self.config.get("sse_read_timeout", 300.0))  # SSE读取超时
+            
+            # 使用SDK连接
+            sse_transport = await self._exit_stack.enter_async_context(
+                sse_client(url, headers=headers, timeout=timeout, sse_read_timeout=sse_read_timeout)
+            )
+            
+            # 创建会话
+            read, write = sse_transport
+            self.session = await self._exit_stack.enter_async_context(
+                ClientSession(read, write)
+            )
+            
+            # 初始化会话
+            await self.session.initialize()
+            logger.info(f"SDK SSE连接服务器成功: {self.name}")
+            
+        except ImportError as e:
+            logger.error(f"无法导入SDK SSE模块: {str(e)}")
+            raise ImportError(f"使用SDK SSE连接需要安装完整的MCP SDK: {str(e)}")
         
         except Exception as e:
             logger.error(f"SSE连接失败: {str(e)}")

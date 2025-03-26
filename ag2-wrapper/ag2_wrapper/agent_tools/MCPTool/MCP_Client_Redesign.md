@@ -12,7 +12,7 @@ MCPTool 是一个适配层工具，将 MCP (Model Context Protocol) 服务器的
 2. **纯SDK客户端 (`client_sdk.py`)**
    - 约500行代码
    - 完全基于官方MCP SDK实现
-   - 更简洁、可靠，但目前只支持Stdio传输
+   - 更简洁、可靠，支持Stdio和SSE传输
 
 ## 主要组件
 
@@ -108,7 +108,7 @@ class MCPTool:
 
 2. **MCP客户端** ✅
    - **Stdio传输方式** ✅ - 完全支持并经过测试
-   - **SSE传输方式** ⚠️ - 有限支持，仅旧版客户端中实现，未经全面测试
+   - **SSE传输方式** ✅ - 两个版本均已实现，SDK版本新添加支持
    - 异步通信协议
    - 服务器连接和断开管理
    - 双版本实现（旧版和SDK版）
@@ -122,6 +122,7 @@ class MCPTool:
    - 使用AsyncExitStack确保资源正确释放
    - 进程管理与错误恢复
    - 超时保护和异常处理
+   - SSE和Stdio连接的可靠资源清理
 
 ## 优化历程
 
@@ -140,6 +141,7 @@ class MCPTool:
    - 对照SDK示例重构连接逻辑
    - 创建纯SDK实现的client_sdk.py
    - 添加版本选择机制
+   - 实现SDK版本的SSE连接支持
 
 4. **测试与验证**
    - 实现测试脚本
@@ -149,8 +151,8 @@ class MCPTool:
 ## 当前局限性
 
 1. **SSE支持**
-   - SDK版本尚不支持SSE连接
-   - 旧版有限支持SSE但缺少全面测试
+   - 两个版本现在均支持SSE连接
+   - 需要进行完整的端到端测试验证
 
 2. **未实现的高级功能**
    - gRPC支持
@@ -161,23 +163,91 @@ class MCPTool:
    - 单元测试覆盖率有限
    - 主要依赖集成测试
 
+## 当前状态
+
+SSE支持已经完成并通过了测试：
+1. 两个客户端版本都已实现SSE连接支持
+2. 已通过与echo服务器的集成测试验证了功能
+3. 资源管理机制已经过测试，确保可靠的连接和断开
+
+### 测试文件
+
+1. **test_echo_server.py**
+   - 简单的MCP Echo服务器，使用SSE传输方式
+   - 提供echo工具用于测试SSE客户端实现
+   - 运行方式：`python -m ag2_wrapper.agent_tools.MCPTool.test_echo_server`
+
+2. **test_sse.py**
+   - SSE连接测试脚本，连接到运行中的SSE服务器
+   - 测试获取工具列表和调用工具
+   - 运行方式：`python -m ag2_wrapper.agent_tools.MCPTool.test_sse`
+
+3. **test_sdk_example.py**
+   - 使用SDK示例服务器的测试脚本
+   - 验证与SDK服务器的兼容性
+   - 运行方式：`python -m ag2_wrapper.agent_tools.MCPTool.test_sdk_example`
+
+## 与AG2 Executor集成
+
+将MCPTool集成到AG2 Executor需要以下步骤：
+
+1. **安装依赖**
+   ```bash
+   pip install mcp-sdk uvicorn starlette httpx httpx-sse
+   ```
+
+2. **初始化MCPTool**
+   ```python
+   from ag2_wrapper.agent_tools.MCPTool import MCPTool, MCPClient
+   from ag2_wrapper.agent_tools.MCPTool.config import add_server
+   
+   # 配置服务器
+   add_server("time_server", {
+       "type": "stdio",
+       "command": "python",
+       "args": ["-m", "mcp_server_time"]
+   })
+   
+   # 初始化客户端和工具
+   mcp_client = MCPClient()
+   mcp_tool = MCPTool(mcp_client)
+   ```
+
+3. **注册MCP工具**
+   ```python
+   # 获取并注册工具
+   tools = await mcp_tool.get_tools()
+   for tool in tools:
+       executor.register_tool(tool)
+   ```
+
+4. **资源管理**
+   ```python
+   # 使用try/finally确保资源释放
+   try:
+       # 使用AG2 Executor
+       result = await executor.execute(prompt, tools=["mcp__time_server__get_current_time"])
+   finally:
+       # 清理资源
+       await mcp_client.disconnect_all()
+   ```
+
 ## 下一步计划
 
-1. **SSE支持完善**
-   - 为SDK版本实现SSE支持
-   - 编写SSE服务器测试用例
+1. **增强适配层功能**
+   - 简化工具注册过程
+   - 改进错误处理和异常恢复机制
+   - 提供更友好的工具发现接口
 
-2. **增强测试覆盖**
-   - 添加单元测试
-   - 扩展测试场景
+2. **扩展支持的服务器**
+   - 添加内置常用MCP服务器集成
+   - 提供服务器模板和示例代码
+   - 实现服务器自动发现机制
 
-3. **文档更新**
-   - 保持文档与实现的一致性
-   - 提供更详细的使用指南
-
-4. **性能优化**
+3. **性能优化**
    - 添加连接池管理
-   - 优化序列化过程
+   - 优化序列化和响应处理
+   - 实现懒加载和按需连接机制
 
 ## 使用建议
 
@@ -204,7 +274,30 @@ class MCPTool:
    server = await client.connect_server("my_stdio_server")
    ```
 
-3. **适当的资源管理**
+3. **连接SSE服务器**
+   ```python
+   # 配置SSE服务器
+   add_server("my_sse_server", {
+       "type": "sse",
+       "url": "http://localhost:8000/mcp",
+       "timeout": 5.0,            # 连接超时（秒）
+       "sse_read_timeout": 300.0, # SSE读取超时（秒）
+       "headers": {               # 可选的请求头
+           "Authorization": "Bearer YOUR_TOKEN"
+       }
+   })
+   
+   # 连接服务器
+   client = MCPClient()
+   server = await client.connect_server("my_sse_server")
+   
+   # 使用完后断开连接
+   await server.disconnect()
+   # 或断开所有连接
+   await client.disconnect_all()
+   ```
+
+4. **适当的资源管理**
    ```python
    try:
        # 使用客户端
