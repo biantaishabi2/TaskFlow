@@ -1,0 +1,41 @@
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Ignore MCP server directories
+servers/
+python-sdk/
+
+# Ignore distribution files
+dist/
+build/
+*.egg-info/
+
+# Ignore MCP configuration directory (except template)
+.mcp/*
+!.mcp/config.json
+
+# Ignore virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Ignore IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Ignore logs
+*.log
+logs/
+
+# Ignore test results
+.coverage
+htmlcov/
+
+# Ignore example output
+examples/output/
