@@ -52,7 +52,7 @@ except ImportError as e:
     sys.exit(1)
 
 # 设置服务器端口
-SSE_PORT = 8765
+SSE_PORT = 8766  # 修改为新端口
 logger.info(f"使用端口: {SSE_PORT}")
 
 

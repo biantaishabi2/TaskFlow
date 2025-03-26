@@ -43,7 +43,7 @@ from ag2_wrapper.agent_tools.MCPTool import MCPClient
 from ag2_wrapper.agent_tools.MCPTool.config import add_server, remove_server
 
 # SSE服务器配置
-SSE_PORT = 8765  # 使用不常用端口避免冲突
+SSE_PORT = 8766  # 使用新端口与echo服务器匹配
 SSE_SERVER_CONFIG = {
     "name": "test_sse_server",
     "config": {
