@@ -2,27 +2,22 @@
 
 ## 实现概述
 
-MCPTool 是一个适配层工具，将 MCP (Model Context Protocol) 服务器的工具转换为 AG2 Executor 可调用的格式。该工具已实现两个版本的客户端，分别是：
+MCPTool 是一个适配层工具，将 MCP (Model Context Protocol) 服务器的工具转换为 AG2 Executor 可调用的格式。
 
-1. **原始客户端 (`client.py`)**
-   - 约1000行代码
-   - 包含自定义传输层和协议处理
-   - 支持SSE和Stdio两种传输方式（但SSE支持有限）
-
-2. **纯SDK客户端 (`client_sdk.py`)**
-   - 约500行代码
-   - 完全基于官方MCP SDK实现
-   - 更简洁、可靠，支持Stdio和SSE传输
+**MCP客户端 (`client_sdk.py`)**
+- 约500行代码
+- 完全基于官方MCP SDK实现
+- 简洁、可靠，支持Stdio和SSE传输
+- 良好的资源管理和错误处理
 
 ## 主要组件
 
 ### 1. 文件结构
 ```
 MCPTool/
-├── __init__.py                # 包导出和客户端版本选择
+├── __init__.py                # 包导出
 ├── MCPTool.py                 # 适配层主类，转换MCP工具为AG2格式
-├── client.py                  # 原始MCP客户端实现
-├── client_sdk.py              # 纯SDK实现的新版客户端
+├── client_sdk.py              # 基于MCP SDK的客户端实现
 ├── config.py                  # 配置管理
 └── test_basic.py              # 基础功能测试
 ```
@@ -108,10 +103,10 @@ class MCPTool:
 
 2. **MCP客户端** ✅
    - **Stdio传输方式** ✅ - 完全支持并经过测试
-   - **SSE传输方式** ✅ - 两个版本均已实现，SDK版本新添加支持
+   - **SSE传输方式** ✅ - 已实现并通过测试
    - 异步通信协议
    - 服务器连接和断开管理
-   - 双版本实现（旧版和SDK版）
+   - 基于官方MCP SDK实现
 
 3. **AG2适配层** ✅
    - MCP工具到AG2格式的转换

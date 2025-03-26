@@ -10,7 +10,7 @@ import asyncio
 import functools
 from typing import Any, Dict, List, Optional, Tuple, Callable
 
-from .client import MCPClient, MCPError, TransportError
+from .client_sdk import MCPClient, MCPError, TransportError
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
