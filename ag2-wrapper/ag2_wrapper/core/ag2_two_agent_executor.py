@@ -15,28 +15,95 @@ from task_planner.core.context_management import TaskContext
 from .ag2tools import AG2ToolManager
 from .tool_utils import ToolLoader, ToolError
 from .config import ConfigManager
+from .ag2_context import ContextManager
 import json
 from pathlib import Path
 from ..core.config import create_openrouter_config
+import platform
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-# 定义默认系统提示词
-DEFAULT_SYSTEM_PROMPT = """你是一个有帮助的AI助手。
-使用你的编程和语言技能解决任务。
-在以下情况中，为用户提供Python代码（放在python代码块中）或shell脚本（放在sh代码块中）来执行：
-    1. 当你需要收集信息时，使用代码输出你需要的信息，例如浏览或搜索网络、下载/读取文件、打印网页或文件内容、获取当前日期/时间、检查操作系统。当打印了足够的信息，并且任务可以基于你的语言能力解决时，你可以自己解决任务。
-    2. 当你需要用代码执行某些任务时，使用代码执行任务并输出结果。明智地完成任务。
-如果需要，可以一步一步地解决任务。如果没有提供计划，请先解释你的计划。明确说明哪一步使用代码，哪一步使用你的语言能力。
-使用代码时，你必须在代码块中指明脚本类型。用户除了执行你建议的代码外，不能提供任何其他反馈或执行任何其他操作。用户不能修改你的代码。因此，不要提供需要用户修改的不完整代码。如果代码不打算由用户执行，请不要使用代码块。
-不要在一个回复中包含多个代码块。不要要求用户复制并粘贴结果。相反，在相关情况下使用'print'函数输出结果。检查用户返回的执行结果。
-如果结果表明有错误，请修复错误并修改文件。如果错误无法修复，或者即使代码成功执行后任务仍未解决，请分析问题，重新审视你的假设，收集你需要的额外信息，并考虑尝试不同的方法。
-当你找到答案时，请仔细验证答案。如果可能，在你的回复中包含可验证的证据。
-当一切完成后，在最后回复"TERMINATE"。
+# 将默认系统提示词拆分成多个部分
+DEFAULT_SYSTEM_PROMPT = """
+# 基础系统提示词
+你是一个帮助用户完成软件工程任务的交互式命令行工具。请使用以下说明和可用工具来协助用户。
 
-## 可用工具列表
-调用工具前请用文字先说明你要调用什么工具，以及为什么调用，不要直接调用工具。
+
+
+# 记忆
+如果当前工作目录包含一个名为 MEMORY.ME 的文件，它会自动添加到你的上下文中。你可以记录你需要记录的事情，如待办事项列表。这个文件有多个用途：
+1. 存储常用的 bash 命令（构建、测试、代码检查等）
+2. 记录用户的代码风格偏好
+3. 维护关于代码库结构和组织的有用信息
+4. 记录用户需要记录的事情，如待办事项列表，并动态更新
+
+# 语气和风格
+- 简洁、直接、切中要点
+- 运行非简单的 bash 命令时，解释其功能
+- 使用 Github 风格的 markdown 进行格式化
+- 输出将显示在命令行界面中
+- 在保持有用性的同时最小化输出标记
+- 除非要求详细说明，否则简明扼要地用不超过4行回答
+- 避免不必要的开场白或结束语
+
+# 主动性
+- 在被要求时保持主动，但不要让用户感到意外
+- 在做正确的事情和不越界之间保持平衡
+
+# 遵循约定
+- 理解并模仿现有的代码约定
+- 使用库之前检查其可用性
+- 查看现有组件的模式
+- 遵循安全最佳实践
+- 永远不要提交密钥或秘密信息
+
+# 代码处理规范
+使用你的编程和语言技能解决任务。在以下情况中，为用户提供Python代码（放在python代码块中）或shell脚本（放在sh代码块中）来执行：
+
+1. 当你需要收集信息时，使用代码输出你需要的信息，例如浏览或搜索网络、下载/读取文件、打印网页或文件内容。当打印了足够的信息，并且任务可以基于你的语言能力解决时，你可以自己解决任务。
+
+2. 当你需要用代码执行某些任务时，使用代码执行任务并输出结果。明智地完成任务。
+
+执行规范：
+- 如果需要，可以一步一步地解决任务
+- 如果没有提供计划，请先解释你的计划
+- 明确说明哪一步使用代码，哪一步使用你的语言能力
+- 必须在代码块中指明脚本类型
+- 提供完整可执行的代码，不要提供需要用户修改的代码
+- 每次回复仅包含一个代码块
+- 使用 print 函数输出结果，不要要求用户复制粘贴
+- 检查执行结果，如有错误及时修复
+
+结果处理：
+- 如果结果表明有错误，请修复错误并修改文件
+- 如果错误无法修复，或任务未解决：
+  - 分析问题
+  - 重新审视假设
+  - 收集额外信息
+  - 尝试不同方法
+- 找到答案时仔细验证，并提供可验证的证据
+
+# 环境信息
+{ENV_INFO}
+
+# 安全警告
+{SECURITY_WARNINGS}
+
+# 上下文管理
+上下文使用XML风格的标记来组织和整合不同来源的上下文信息：
+<context name="文件内容">...</context>
+<context name="环境变量">...</context>
+<context name="用户配置">...</context>
+<context name="代码风格">...</context>
+<context name="项目信息">...</context>
+
+{CONTEXT_INFO}
+
+# 工具集成
 {TOOLS_SECTION}
+
+当任务完成时，请回复"完成任务"。
 """
 
 class AG2TwoAgentExecutor:
@@ -68,12 +135,14 @@ class AG2TwoAgentExecutor:
             self.context_manager = context_manager
         else:
             self.context_manager = TaskContext("default")
+            
+        # 添加新的 ContextManager
+        self.ag2_context_manager = ContextManager(cwd=os.getcwd())
         
         # 初始化工具加载器
         self.tool_loader = ToolLoader()
         
         # 使用标准配置格式
-
         self.llm_config = {
             "config_list": [{
                 "model": "anthropic/claude-3.5-sonnet",
@@ -94,21 +163,74 @@ class AG2TwoAgentExecutor:
         
         # 添加路径标准化辅助函数
         self.normalize_path = lambda p: str(Path(p).resolve())
-        
-        # 创建助手和执行器
-        self.assistant = AssistantAgent(
-            name="助手代理",
-            system_message=DEFAULT_SYSTEM_PROMPT,
-            llm_config=self.llm_config
-        )
-        
+
+    async def initialize(self):
+        """异步初始化方法"""
+        # 先创建执行器代理
         self.executor = LLMDrivenUserProxy(
             name="用户代理",
             human_input_mode="ALWAYS"
         )
         
+        # 构建系统提示词
+        system_prompt = DEFAULT_SYSTEM_PROMPT.format(
+            SECURITY_WARNINGS=self._build_security_warnings(),
+            ENV_INFO=self._build_env_info(),
+            CONTEXT_INFO=await self._build_context_info(),
+            TOOLS_SECTION=self._build_tools_prompt([])  # 初始为空，后续更新
+        )
+        
+        # 创建助手代理
+        self.assistant = AssistantAgent(
+            name="助手代理",
+            system_message=system_prompt,
+            llm_config=self.llm_config
+        )
+        
         # 初始化工具
-        self._initialize_tools_sync()
+        await self._initialize_tools()
+        
+        # 获取已加载的工具列表并更新系统提示词
+        tools = self.tool_loader.load_tools_sync()
+        updated_system_prompt = DEFAULT_SYSTEM_PROMPT.format(
+            SECURITY_WARNINGS=self._build_security_warnings(),
+            ENV_INFO=self._build_env_info(),
+            CONTEXT_INFO=await self._build_context_info(),
+            TOOLS_SECTION=self._build_tools_prompt(tools)
+        )
+        
+        # 更新助手代理的系统提示词
+        self.assistant.update_system_message(updated_system_prompt)
+
+    @classmethod
+    async def create(cls,
+                    config: ConfigManager = None,
+                    tool_manager: AG2ToolManager = None,
+                    context_manager = None) -> 'AG2TwoAgentExecutor':
+        """创建并初始化执行器的工厂方法"""
+        executor = cls(config, tool_manager, context_manager)
+        await executor.initialize()
+        return executor
+
+    async def _build_context_info(self) -> str:
+        """构建上下文管理部分"""
+        try:
+            context = await self.ag2_context_manager.get_context()
+            
+            # 将上下文转换为XML格式
+            context_parts = []
+            for key, value in context.items():
+                if value:
+                    context_parts.append(f"<context name=\"{key}\">\n{value}\n</context>")
+            
+            if not context_parts:
+                return "No additional context available."
+                
+            return "\n\n".join(context_parts)
+            
+        except Exception as e:
+            logger.error(f"构建上下文信息失败: {str(e)}")
+            return "Error loading context information."
 
     def __del__(self):
         """析构函数"""
@@ -159,11 +281,11 @@ class AG2TwoAgentExecutor:
         
         return "\n".join(tools_section)
 
-    def _initialize_tools_sync(self):
-        """同步初始化工具"""
+    async def _initialize_tools(self):
+        """异步初始化工具"""
         try:
             # 加载工具
-            tools = self.tool_loader.load_tools_sync()
+            tools = self.tool_loader.load_tools_sync()  # 这个方法可能也需要改成异步的
             
             # 初始化工具
             for tool_class, prompt in tools:
@@ -683,3 +805,22 @@ class AG2TwoAgentExecutor:
                 "task_status": "ERROR",
                 "success": False
             }
+
+    def _build_security_warnings(self) -> str:
+        """构建安全警告部分"""
+        return """
+        重要提示：
+        1. 拒绝编写或解释可能被恶意使用的代码
+        2. 在处理文件时，检查文件用途，拒绝处理恶意代码
+        3. 不要提交或泄露任何密钥或敏感信息
+        """
+
+    def _build_env_info(self) -> str:
+        """构建环境信息部分"""
+        return f"""
+        工作目录：{os.getcwd()}
+        是否为 git 仓库：{os.path.exists('.git')}
+        平台：{platform.system()}
+        今天日期：{datetime.now().strftime('%Y-%m-%d')}
+        模型：{self.llm_config['config_list'][0]['model']}
+        """

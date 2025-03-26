@@ -1,15 +1,14 @@
 """
-测试 AG2 Two Agent Executor
-用于验证 AG2 Executor 的基本功能和工具调用
+测试 AG2 执行器
 """
+
+import asyncio
 import os
+from pathlib import Path
 import sys
 import logging
-from pathlib import Path
-import asyncio
 from typing import Dict, Any
 import warnings
-import urllib3
 
 # 抑制pydantic的警告
 warnings.filterwarnings("ignore", message="Valid config keys have changed in V2")
@@ -32,7 +31,8 @@ logging.basicConfig(
 )
 
 # 添加项目根目录到 Python 路径
-project_root = Path(__file__).parent.parent.parent.parent
+current_dir = Path(__file__).resolve().parent
+project_root = current_dir.parent.parent.parent.parent  # task_planner 目录
 sys.path.append(str(project_root))
 
 from ag2_wrapper.core.ag2_two_agent_executor import AG2TwoAgentExecutor
@@ -47,59 +47,51 @@ async def main():
     # 设置测试环境变量
     os.environ["NODE_ENV"] = "test"
     
-    # 初始化配置管理器
+    # 初始化配置
     config = ConfigManager()
     
-    # 初始化执行器和上下文
-    executor = AG2TwoAgentExecutor(config=config)
-    task_context = TaskContext("test_ag2")
+    # 创建并初始化执行器
+    executor = await AG2TwoAgentExecutor.create(config=config)
     
-    # 设置文件读取时间戳记录
-    read_timestamps = {}
+    print("执行器初始化成功！")
     
-    # 定义综合测试任务
-    task_definition = {
-        "id": "test_ag2_001",
-        "name": "AG2执行器综合测试",
-        "description": "测试AG2执行器的各项基本功能",
+    # 打印系统提示词
+    print("\n=== 系统提示词 ===")
+    print(executor.assistant.system_message)
+    print("\n=== 工具列表 ===")
+    print(executor.tool_manager._tools)
+    
+    # 创建一个简单的测试任务
+    test_task = {
+        "id": "test_task_001",
+        "name": "测试任务",
+        "description": "这是一个简单的测试任务",
         "success_criteria": [
-            "成功执行所有工具调用",
-            "工具之间正确配合",
-            "返回预期的结果"
+            "成功执行命令",
+            "返回预期结果"
         ]
     }
-
-    try:
-        # 执行测试任务
-        prompt = """
-        请帮我测试以下功能：
-
-        1. 列出该目录/home/wangbo/document/wangbo/dev/webhook下的文件
-        2. 用grep命令搜索README.md文件中包含"test"的行
-        3. 读取README.md文件内容
-        4. 在README.md文件最后添加一行内容："test"
-
-        请执行每个步骤并告诉我执行结果。
-        """
-
-        result = executor.execute(
-            prompt=prompt,
-            task_definition=task_definition,
-            task_context=task_context
-        )
-        
-        # 打印测试结果
-        if result.get("success", False):
-            logging.info("\n=== 测试执行成功 ===")
-            logging.info(result.get("result", "无详细结果"))
-        else:
-            logging.error("\n=== 测试执行失败 ===")
-            logging.error(f"错误信息: {result.get('error_msg', '未知错误')}")
-            
-    except Exception as e:
-        logging.error(f"测试执行过程中发生错误: {str(e)}")
-        raise
+    
+    # 创建任务上下文
+    task_context = TaskContext("test_task")
+    
+    print("\n=== 开始执行测试任务 ===")
+    # 执行一个简单的测试命令
+    result = executor.execute(
+        prompt="请列出当前目录下的文件和子目录。",
+        task_definition=test_task,
+        task_context=task_context
+    )
+    
+    print("\n=== 任务执行结果 ===")
+    print(f"状态: {result.get('status', 'unknown')}")
+    print(f"成功: {result.get('success', False)}")
+    if result.get('success', False):
+        print("\n输出:")
+        print(result.get('output', '无输出'))
+    else:
+        print("\n错误信息:")
+        print(result.get('error_msg', '未知错误'))
 
 if __name__ == "__main__":
-    # 运行测试
     asyncio.run(main())
