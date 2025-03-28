@@ -137,6 +137,8 @@ class LLMResponseAgent:
 - 如果助手提供了Shell命令(```sh)，请选择TOOL_APPROVED
 - 如果助手使用了诸如"请执行"、"请运行"、"请保存"这类指令，请选择TOOL_APPROVED
 - 如果助手提供了操作步骤并期望你执行，请选择TOOL_APPROVED
+- 如果助手说：让我们继续查看测试文件内容：
+***** Suggested tool call 你应该选择TOOL_APPROVED
 - 如果消息中包含诸如"function_call"、"tool_call"或类似格式的函数调用建议，请选择TOOL_APPROVED
 
 工具调用格式示例（以下形式出现时都应选择TOOL_APPROVED）：

@@ -1,0 +1,74 @@
+# AG2 项目记忆文件
+
+## 项目结构
+- task_planner/: 主项目目录
+  - ag2-wrapper/: AG2 封装模块
+    - ag2_wrapper/: 核心代码
+      - core/: 核心功能实现
+        - ag2_context.py: 上下文管理器
+        - ag2_two_agent_executor.py: 双智能体执行器
+      - chat_modes/: 聊天模式
+      - tools/: 工具集合
+  - tests/: 测试目录
+
+## 常用命令
+```bash
+# 运行测试
+python -m pytest tests/
+
+# 运行单个测试文件
+python task_planner/ag2-wrapper/ag2_wrapper/core/test_context.py
+
+# 代码格式化
+black .
+flake8 .
+
+# 运行 AG2
+python -m task_planner.ag2-wrapper.ag2_wrapper.core.ag2_two_agent_executor
+```
+
+## 代码风格规范
+1. 异步编程规范：
+   - 使用 async/await 进行异步操作
+   - 异步函数命名前缀不使用 async_
+   - 异步函数返回类型使用 typing 标注
+
+2. 错误处理规范：
+   - 使用 try/except 进行异常捕获
+   - 记录错误日志使用 logging 模块
+   - 返回合理的错误信息或默认值
+
+3. 文档规范：
+   - 类和方法必须有文档字符串
+   - 参数和返回值要有类型注解
+   - 复杂逻辑需要添加注释
+
+## 依赖管理
+- Python 3.8+
+- 主要依赖：
+  - autogen
+  - openai
+  - pytest
+  - black
+  - flake8
+
+## 注意事项
+1. Git 操作：
+   - 提交前运行测试
+   - 保持提交信息清晰
+   - 不要提交敏感信息
+
+2. 上下文管理：
+   - ContextManager 负责环境信息收集
+   - 支持 Git 信息获取
+   - 自动加载 MEMORY.ME 和 README
+
+3. 性能优化：
+   - 避免重复的文件读取
+   - 合理使用异步操作
+   - 必要时才使用缓存
+
+4. 调试技巧：
+   - 使用 logging 模块记录日志
+   - 设置合适的日志级别
+   - 检查 Git 状态和文件权限 
