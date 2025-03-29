@@ -97,6 +97,9 @@ class ContextManager:
             # 获取你的最近提交
             your_commits = await self._run_git_command(['log', '-5', '--pretty=format:%h %s'])
             
+            # 获取远程仓库信息
+            remotes = await self._run_git_command(['remote', '-v'])
+
             return f"""This is the git status at the start of the conversation. Note that this status is a snapshot in time, and will not update during the conversation.
 Current branch: {branch}
 
@@ -104,6 +107,9 @@ Main branch (you will usually use this for PRs): {main_branch}
 
 Status:
 {status}
+
+Configured Remotes:
+{remotes if remotes else 'No remotes configured.'}
 
 Recent commits:
 {commits}

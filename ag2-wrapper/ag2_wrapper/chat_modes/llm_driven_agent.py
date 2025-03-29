@@ -44,7 +44,7 @@ class LLMDrivenUserProxy(content_tool_call_agent.ContentToolCallAgent):
         # 创建代码执行器，使用coding_workspace作为工作目录
         executor = LocalCommandLineCodeExecutor(
             timeout=500,
-            work_dir="coding_workspace"  # 固定使用coding_workspace目录
+            work_dir="."  # 使用当前目录作为工作目录
         )
         
         # 添加代码执行配置
@@ -64,14 +64,32 @@ class LLMDrivenUserProxy(content_tool_call_agent.ContentToolCallAgent):
         """获取用户输入（由LLM自动判断）"""
         # 收集聊天历史
         chat_history = []
-        for agent_name, messages in self.chat_messages.items():
-            for msg in messages[-5:]:  # 最近5条
-                chat_history.append({
-                    "sender": agent_name,
-                    "content": msg.get("content", "")
-                })
-        
-        # 获取响应判断（不需要额外参数）
+        # self.chat_messages 属性直接返回 self._oai_messages
+        for agent_sender_obj, messages in self.chat_messages.items(): # agent_sender_obj 是 Agent 对象
+            sender_name = agent_sender_obj.name if hasattr(agent_sender_obj, 'name') else 'unknown_sender'
+            for msg in messages[-5:]:  # 获取每个发送者的最近5条消息
+                # 完整地复制消息字典中的相关字段
+                processed_msg = {
+                    # 使用发送者名称，而不是对象
+                    "sender_name": sender_name, 
+                    # 保留原始 role (如果存在)
+                    "role": msg.get("role"),
+                    # 保留 content (如果存在)
+                    "content": msg.get("content"),
+                    # 保留 tool_calls (如果存在且不为 None)
+                    "tool_calls": msg.get("tool_calls"),
+                    # 保留 function_call (如果存在且不为 None)
+                    "function_call": msg.get("function_call"),
+                    # 保留 tool_responses (如果存在且不为 None)
+                    "tool_responses": msg.get("tool_responses"),
+                    # (可选) 保留 name 字段 (某些消息格式可能使用)
+                    "name": msg.get("name") 
+                }
+                # 过滤掉值为 None 的键，保持消息简洁
+                filtered_msg = {k: v for k, v in processed_msg.items() if v is not None}
+                chat_history.append(filtered_msg)
+
+        # 将这个 *完整* 的 chat_history 传递给 response_agent
         response = self.response_agent.get_response(chat_history)
         
         # 打印响应判断结果

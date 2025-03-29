@@ -63,6 +63,16 @@ DEFAULT_SYSTEM_PROMPT = """
 3. 维护关于代码库结构和组织的有用信息
 4. 记录用户需要记录的事情，如待办事项列表，并动态更新
 
+# Git 工作流规范
+- **禁止** 直接在主分支（如 `master`, `main`）上进行任何修改或提交。
+- **必须** 在进行任何文件修改或代码编写之前，从最新的主分支创建一个新的、有描述性名称的功能分支。
+- 标准流程：
+  1. 确保在主分支上: `git checkout main` (或 `master`)
+  2. 拉取最新代码: `git pull origin main` (或 `master`)
+  3. 创建并切换到新分支: `git checkout -b new-feature-branch-name`
+  4. 在新分支上进行所有修改和提交。
+- 永远不要建议在主分支上直接执行 `git commit` 或 `git push`。
+
 # 语气和风格
 - 简洁、直接、切中要点
 - 运行非简单的 bash 命令时，解释其功能和目的
@@ -75,6 +85,12 @@ DEFAULT_SYSTEM_PROMPT = """
 - 如果不能帮助用户，不要解释原因，提供替代方案或限制回复在1-2句话内
 - 直接回答问题，避免阐述、解释或详细说明
 - 避免在回答前后使用多余文本（如"答案是..."）
+
+# Shell 命令执行规范
+对于所有需要在 shell 中执行的命令，无论简单或复杂，你都必须将它们封装在 ```sh ... ``` 代码块中以供执行。
+不要尝试建议或调用名为 'bash' 或 'shell' 的工具，始终使用 `sh` 代码块。
+
+**重要：** 在执行完 ```sh ... ``` 代码块后，你必须将该命令的 **完整输出**（包括标准输出和标准错误）**原样**返回给我。这对于调试和确认命令是否成功执行至关重要。如果命令出现错误，务必包含完整的错误信息。
 
 <示例>
 用户：2 + 2
@@ -140,7 +156,10 @@ DEFAULT_SYSTEM_PROMPT = """
 
 # 代码处理规范
 使用你的编程和语言技能解决任务。在以下情况中，为用户提供Python代码（放在python代码块中）或shell脚本（放在sh代码块中）来执行：
-
+如```python
+import os
+print(os.getcwd())
+```
 1. 当你需要收集信息时，使用代码输出你需要的信息，例如浏览或搜索网络、下载/读取文件、打印网页或文件内容。当打印了足够的信息，并且任务可以基于你的语言能力解决时，你可以自己解决任务。
 
 2. 当你需要用代码执行某些任务时，使用代码执行任务并输出结果。明智地完成任务。
@@ -218,31 +237,30 @@ class AG2TwoAgentExecutor:
         self.config = config or ConfigManager()
         self.tool_manager = tool_manager or AG2ToolManager()
         
-        # 初始化上下文管理器（允许从外部传入）
+        # 初始化上下文管理器
         if context_manager:
             self.context_manager = context_manager
+            # 使用当前工作目录创建 AG2 上下文管理器
+            self.ag2_context_manager = ContextManager(cwd=os.getcwd())
         else:
             self.context_manager = TaskContext("default")
+            # 使用当前工作目录创建 AG2 上下文管理器
+            self.ag2_context_manager = ContextManager(cwd=os.getcwd())
             
-        # 添加新的 ContextManager
-        self.ag2_context_manager = ContextManager(cwd=os.getcwd())
-        
         # 初始化工具加载器
         self.tool_loader = ToolLoader()
         
         # 使用标准配置格式
         self.llm_config = {
-            "config_list": [{
-                "model": "anthropic/claude-3.5-sonnet",
-                # "model": "deepseek-chat",
-                "api_key": os.environ.get("OPENROUTER_API_KEY"),
-                # "api_key": os.environ.get("DEEPSEEK_API_KEY"),
-                "base_url": "https://openrouter.ai/api/v1",
-                # "base_url": "https://api.deepseek.com",
-                "api_type": "openai"
-            }],
-            "temperature": 0.3,
-            "timeout": 500
+            "config_list": [
+                {
+                    "model": "anthropic/claude-3.7-sonnet",
+                    "base_url": "https://openrouter.ai/api/v1",
+                    "api_key": os.environ.get("OPENROUTER_API_KEY")
+                }
+            ],
+            "temperature": 0.1,
+            "cache_seed": 42,
         }
         
         # 使用模块级全局时间戳字典，确保所有工具共享同一个引用
@@ -343,6 +361,11 @@ class AG2TwoAgentExecutor:
         tools_section = []
         
         for tool_class, prompt in tools_list:
+            # --- 跳过 BashTool 的描述 ---
+            if tool_class.__name__ == "BashTool":
+                continue
+            # --- 跳过结束 ---
+            
             tool = tool_class()
             
             # 构建参数描述
@@ -385,6 +408,12 @@ class AG2TwoAgentExecutor:
             # 初始化工具
             for tool_class, prompt in tools:
                 try:
+                    # --- 跳过 BashTool 的注册 ---
+                    if tool_class.__name__ == "BashTool":
+                        logging.debug(f"Skipping registration of BashTool to enforce code block usage.")
+                        continue
+                    # --- 跳过结束 ---
+                    
                     # 创建工具实例
                     tool_instance = tool_class()
                     
@@ -567,46 +596,79 @@ class AG2TwoAgentExecutor:
                 "success": False
             }
 
-    def execute(self, 
-                prompt: str,
-                task_definition: Dict[str, Any],
-                task_context: TaskContext,
-                timeout: Optional[int] = None,
-                max_history_turns: int = 5) -> Dict[str, Any]:
-        """
-        执行任务 - 纯同步实现
+    def execute(self, prompt: str, task_definition: dict = None, task_context = None, timeout: int = 600):
+        """执行任务
         
         Args:
             prompt: 任务提示
             task_definition: 任务定义
             task_context: 任务上下文
-            timeout: 超时时间(秒)
-            max_history_turns: 最大历史对话轮数
-            
-        Returns:
-            Dict[str, Any]: 执行结果
+            timeout: 超时时间（秒）
         """
-        subtask_id = task_definition.get('id', 'unknown')
-        logger.info(f"任务 {subtask_id} 开始执行")
-        
         try:
-            # 直接调用同步方法执行
-            result = self._execute_with_timeout(
-                prompt=prompt,
-                task_definition=task_definition,
-                task_context=task_context,
-                timeout=timeout
+            # 如果提供了任务上下文，更新当前上下文
+            if task_context:
+                self.context_manager = task_context
+            
+            # 使用已初始化的代理
+            if not hasattr(self, 'executor') or not hasattr(self, 'assistant'):
+                raise RuntimeError("执行器未正确初始化，请使用 create() 方法创建实例")
+            
+            # 初始化对话
+            chat_result = self.executor.initiate_chat(
+                self.assistant,
+                message=prompt,
+                silent=False
             )
             
-            logger.info(f"任务 {subtask_id} 执行完成，结果状态: {result.get('status', 'unknown')}")
-            return result
-                
+            # --- 在这里添加代码，记录 initiate_chat 的完整结果 ---
+            try:
+                if chat_result and hasattr(chat_result, 'chat_history'):
+                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+                    filename = f"debug_executor_chat_result_history_{timestamp}.json"
+                    cwd = os.getcwd() # 获取当前工作目录
+                    filepath = os.path.join(cwd, filename)
+                    
+                    # 尝试序列化聊天历史，处理无法序列化的对象
+                    def safe_serialize(obj):
+                        if isinstance(obj, (str, int, float, bool, list, dict)) or obj is None:
+                            return obj
+                        elif hasattr(obj, 'name'): # 尝试获取 Agent 的 name
+                            return f"<Agent: {obj.name}>"
+                        else:
+                            return f"<object of type {type(obj).__name__} not serializable>"
+
+                    # 创建可序列化的历史记录副本
+                    serializable_history = []
+                    if isinstance(chat_result.chat_history, list):
+                        for msg in chat_result.chat_history:
+                            if isinstance(msg, dict):
+                                serializable_msg = {k: safe_serialize(v) for k, v in msg.items()}
+                                serializable_history.append(serializable_msg)
+                            else:
+                                serializable_history.append(safe_serialize(msg)) # 处理非字典消息
+                    
+                    with open(filepath, 'w', encoding='utf-8') as f:
+                        json.dump(serializable_history, f, indent=2, ensure_ascii=False)
+                    logger.info(f"Successfully wrote executor chat result history to: {filepath}")
+                else:
+                    logger.warning("chat_result or chat_result.chat_history not found, cannot write executor debug history.")
+            except Exception as e:
+                logger.error(f"Failed to write executor chat result history to file: {e}", exc_info=True)
+            # --- 记录结束 ---
+
+            return {
+                "status": "success",
+                "result": chat_result,
+                "task_status": "COMPLETED",
+                "success": True
+            }
+            
         except Exception as e:
-            error_msg = str(e)
-            logger.error(f"任务 {subtask_id} 执行出错: {error_msg}", exc_info=True)
+            logger.error(f"任务执行出错: {str(e)}")
             return {
                 "status": "error",
-                "error_msg": error_msg,
+                "error_msg": str(e),
                 "task_status": "ERROR",
                 "success": False
             }
@@ -912,10 +974,12 @@ class AG2TwoAgentExecutor:
 
     def _build_env_info(self) -> str:
         """构建环境信息部分"""
+        # 获取 ContextManager 知道的 CWD
+        # 使用 self.ag2_context_manager.cwd (在 executor 初始化时设置)
+        initial_cwd = self.ag2_context_manager.cwd if hasattr(self, 'ag2_context_manager') and self.ag2_context_manager else os.getcwd()
         return f"""
-        工作目录：{os.getcwd()}
-        是否为 git 仓库：{os.path.exists('.git')}
         平台：{platform.system()}
         今天日期：{datetime.now().strftime('%Y-%m-%d')}
         模型：{self.llm_config['config_list'][0]['model']}
+        初始工作目录: {initial_cwd}
         """

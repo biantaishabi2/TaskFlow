@@ -8,6 +8,10 @@ import tenacity  # 需要安装pip install tenacity
 from openai import APIError  # 新增导入
 import requests.exceptions as requests_exceptions  # 新增网络异常处理
 from autogen.messages.agent_messages import ToolResponse  # 新增导入
+from typing import Union, Optional, Dict, List # 导入 Dict 和 List
+import os
+from datetime import datetime
+from autogen import Agent # 导入 Agent
 
 logger = logging.getLogger(__name__)
 

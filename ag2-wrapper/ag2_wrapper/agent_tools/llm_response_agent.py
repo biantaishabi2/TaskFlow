@@ -39,6 +39,8 @@ else:
 
 import json
 import logging
+import os
+from datetime import datetime
 from typing import List, Dict, Any
 import litellm
 
@@ -74,9 +76,22 @@ class LLMResponseAgent:
         Returns:
             包含响应类型、消息和判断理由的字典
         """
-        # 如果没有提供任务描述，尝试从聊天历史中提取
-        if not task_description and chat_history:
-            task_description = chat_history[0].get("content", "") if chat_history else ""
+        if not chat_history:
+            return None
+
+        # --- 直接记录传入的 chat_history ---
+        try:
+            logger.info("Received chat history:")
+            logger.info(json.dumps(chat_history, indent=2, ensure_ascii=False, default=lambda o: f'<object of type {type(o).__name__} not serializable>'))
+        except Exception as e:
+            logger.error(f"Failed to log chat_history: {e}", exc_info=True)
+        # --- 记录结束 ---
+
+        task_description = chat_history[0].get("content", "") if chat_history else ""
+        
+        # --- 添加日志记录 ---
+        logger.info(f"LLMResponseAgent received chat_history: {json.dumps(chat_history, indent=2, ensure_ascii=False, default=lambda o: f'<object of type {type(o).__name__} not serializable>')}")
+        # --- 日志记录结束 ---
         
         # 构建提示词
         prompt = self._build_prompt(chat_history, task_description)
@@ -84,10 +99,10 @@ class LLMResponseAgent:
         # 直接同步调用 LLM
         try:
             response = litellm.completion(
-                model="openrouter/google/gemini-2.0-flash-lite-001",
+                model="gemini/gemini-2.5-pro-exp-03-25",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
-                max_tokens=100
+                max_tokens=2048
             )
             llm_response = response.choices[0].message.content
             
@@ -105,68 +120,72 @@ class LLMResponseAgent:
                 "reasoning": "LLM调用失败，默认继续对话"
             }
     
-    def _build_prompt(self, chat_history: List[Dict[str, str]], task_description: str) -> str:
-        """构建提示词"""
-        # 将聊天记录格式化为字符串
+    def _build_prompt(self, chat_history: List[Dict[str, Any]], task_description: str) -> str:
+        """构建提示词 (处理包含 sender_name 的 JSON 消息表示)"""
         chat_history_str = ""
         for i, msg in enumerate(chat_history):
-            sender = msg.get("sender", "未知")
-            content = msg.get("content", "")
-            chat_history_str += f"{i+1}. [{sender}]: {content}\n\n"
-        
-        # 构建完整提示词
-        prompt = f"""作为一个自动判断的用户代理，你的任务是分析以下对话内容中助手的行为，并根据当前上下文判断应该做出什么响应。
+            # 直接使用 "sender_name" (因为 get_human_input 已经处理了)
+            sender_name = msg.get("sender_name", "未知")
+            
+            # 构建一个可序列化的消息表示 (现在 msg 已经是基本类型了)
+            serializable_msg = msg # 直接使用传入的 msg 字典
+            
+            # 将这个字典转换为JSON字符串
+            try:
+                # 移除 sender_name 键，因为它已经在外面显示了
+                msg_to_serialize = serializable_msg.copy()
+                msg_to_serialize.pop('sender_name', None) 
+                msg_json_str = json.dumps(msg_to_serialize, indent=2, ensure_ascii=False)
+            except Exception as e:
+                logger.error(f"无法将消息字典序列化为JSON: {serializable_msg}, 错误: {e}")
+                msg_json_str = f"{{{{ 'error': '无法序列化消息字典', 'keys': {list(serializable_msg.keys())} }}}}"
+
+            # 格式化输出，将JSON放入代码块
+            # 使用三引号来处理多行 f-string
+            chat_history_str += f"""{i+1}. 发送者: [{sender_name}]
+消息 JSON:
+```json
+{msg_json_str}
+```
+
+"""
+
+        # 构建完整提示词 (提示词主体保持不变)
+        prompt = f"""作为一个自动判断的用户代理，你的任务是分析以下对话中 **助手代理** 发送的 **最后一条消息** 的JSON结构和内容，并根据对话历史和任务描述判断应该做出什么响应。
 
 任务描述: {task_description}
 
-最近的对话历史:
+最近的对话历史 (每条消息都以JSON对象呈现):
 {chat_history_str}
 
-请判断当前应该采取的行动类型，并给出结构化的JSON响应。响应类型包括:
+请重点分析 **最后一条来自 [助手代理] 或角色为 [assistant]** 的消息JSON对象。判断当前应该采取的行动类型，并给出结构化的JSON响应。响应类型包括:
 
-1. TOOL_APPROVED: 助手请求执行工具或命令，你同意执行
-2. TOOL_REJECTED: 助手请求执行工具或命令，但你拒绝执行
-3. TASK_COMPLETED: 任务已经完成，对话可以结束
-4. TEXT_RESPONSE: 普通文本回复，继续对话, 如果需要执行工具调用，请选择TOOL_APPROVED,不要回复同意这样的TEXT_RESPONSE
+1. TOOL_APPROVED: **判断依据 (满足任一即可，除非含危险操作):**
+    a) 消息JSON中明确包含 `tool_calls` (一个列表) 或 `function_call` (一个字典) 键。
+    b) 消息JSON的 `content` 字段 (如果存在且为字符串) 包含可执行的代码块 (标记为 ```python ...``` 或 ```sh ...```)。
+2. TOOL_REJECTED: 满足 `TOOL_APPROVED` 的条件 a) 或 b)，但包含危险操作（如 `rm` 命令）。
+3. TASK_COMPLETED: 任务目标已明确达成，并且 **助手代理** 的最后一条消息JSON中 **没有** 包含任何 `tool_calls`、`function_call` 或可执行代码块 (```python ...``` 或 ```sh ...```)。
+4. TEXT_RESPONSE: 不符合以上任何条件，通常是简单的文本交流，需要继续对话。
 
-明确指示：当助手提供了工具调用的建议（具体的格式下面有），或当助手提供代码并要求执行、保存或运行时，如果没有rm命令的话，你应该总是选择TOOL_APPROVED。如果有rm命令你应该拒绝，告诉他可以mv这个文件，而不是使用危险的删除。
-
-具体判断标准：
-- 如果消息中包含"suggested tool call"或类似结构化工具调用格式，请选择TOOL_APPROVED
-- 如果助手提供了Python代码块(```python)，请选择TOOL_APPROVED
-- 如果助手提供了Shell命令(```sh)，请选择TOOL_APPROVED
-- 如果助手使用了诸如"请执行"、"请运行"、"请保存"这类指令，请选择TOOL_APPROVED
-- 如果助手提供了操作步骤并期望你执行，请选择TOOL_APPROVED
-- 如果助手说：让我们继续查看测试文件内容：
-***** Suggested tool call 你应该选择TOOL_APPROVED
-- 如果消息中包含诸如"function_call"、"tool_call"或类似格式的函数调用建议，请选择TOOL_APPROVED
-
-工具调用格式示例（以下形式出现时都应选择TOOL_APPROVED）：
-```
-suggested tool call: search_web(query="Python数据分析库")
-```
-或
-```
-function call: execute_code(language="python", code="print('Hello world')")
-```
-
-在判断出现了工具调用或者代码执行的时候，你同意的时候总是要选择TOOL_APPROVED，永远不要在text response中回答同意，请继续。（这样会拒绝工具的执行）
-只有在以下情况才返回 TASK_COMPLETED：
-1. 工具调用已经成功执行完毕，你不能在助手提出要求之后不帮他执行就返回TASK_COMPLETED
-2. 助手明确表示任务已完成，并且他还要实际确认这一点，而不是在执行之前就宣称任务已经完成
-3. 没有更多需要执行的操作
+明确指示：
+- 仔细检查 **助手代理** 的最后一条消息JSON对象。
+- **首要检查** JSON中是否存在 `tool_calls` (列表) 或 `function_call` (字典) 键。如果存在，通常应选择 `TOOL_APPROVED`。
+- **同时检查** JSON中 `content` 字段是否包含 ```python ...``` 或 ```sh ...``` 代码块。如果存在，通常也应选择 `TOOL_APPROVED`。
+- ***重要***：**只要满足以上任一条件 (存在 `tool_calls`/`function_call` 或 `content` 中存在代码块)，就必须判断为 `TOOL_APPROVED`** (除非含危险操作，则为 `TOOL_REJECTED`)。**即使消息文本中包含"完成任务"或类似的表述，也不能将其判断为 `TASK_COMPLETED`！**
+- **永远不要** 在 TEXT_RESPONSE 中回复"同意"或"请继续执行"，如果需要执行工具/代码，必须选择 `TOOL_APPROVED`。
+- 如果检测到 `rm` 命令或其他潜在危险操作，应选择 `TOOL_REJECTED` 并建议替代方案（如 `mv`）。
+- **只有当任务目标看起来已完成，并且** 助手最后的消息JSON中 **绝对没有** `tool_calls`、`function_call` 或任何 ```...``` 代码块时，才能返回 `TASK_COMPLETED`。
 
 你的响应必须是一个符合以下格式的JSON对象:
 {{
   "action_type": "TOOL_APPROVED|TOOL_REJECTED|TASK_COMPLETED|TEXT_RESPONSE",
-  "message": "简短说明或回复内容",
-  "reasoning": "你的判断理由"
+  "message": "简短说明或回复内容 (仅在TOOL_REJECTED或TEXT_RESPONSE时填写)",
+  "reasoning": "你的判断理由 (基于对最后助手消息JSON的分析，明确说明是基于 tool_calls/function_call 还是代码块)"
 }}
 
 注意:
-- 如果同意执行工具或命令(TOOL_APPROVED)，message字段应为空字符串
-- 仅在任务已明确完成时才返回TASK_COMPLETED
-- 请基于整个对话历史和任务描述做出判断
+- 如果选择 `TOOL_APPROVED` 或 `TASK_COMPLETED`，message字段应为空字符串 `""`。
+- 请基于对 **最后一条助手消息JSON结构和内容** 的分析做出判断。
 
 请直接返回JSON对象，不要有其他文字。
 """
@@ -195,18 +214,77 @@ function call: execute_code(language="python", code="print('Hello world')")
             response_data = json.loads(json_str)
             
             # 转换为标准格式
+            # Ensure action_type exists and maps correctly, default to TEXT_RESPONSE
+            action_type = response_data.get("action_type")
+            # Simple validation, could be more robust checking against ResponseType enum values if imported
+            valid_types = ["TOOL_APPROVED", "TOOL_REJECTED", "TASK_COMPLETED", "TEXT_RESPONSE"]
+            if action_type not in valid_types:
+                 logger.warning(f"LLM returned unknown action_type '{action_type}'. Defaulting to TEXT_RESPONSE.")
+                 action_type = "TEXT_RESPONSE" # Default to TEXT_RESPONSE if invalid type
+
             return {
-                "type": response_data.get("action_type", ResponseType.TEXT_RESPONSE),
+                "type": action_type,
                 "message": response_data.get("message", ""),
                 "reasoning": response_data.get("reasoning", "")
             }
         except Exception as e:
-            logger.error(f"解析LLM响应时出错: {str(e)}")
+            logger.error(f"解析LLM响应JSON时出错: {str(e)}")
             logger.error(f"原始响应: {llm_response}")
-            
-            # 返回默认响应
-            return {
-                "type": ResponseType.TEXT_RESPONSE,
-                "message": "继续对话",
-                "reasoning": "解析LLM响应失败，默认继续对话"
-            } 
+
+            # --- Fallback Logic: Parse raw string ---
+            logger.info("JSON解析失败，尝试从原始响应文本中解析关键词...")
+            raw_response_upper = llm_response.upper() # Case-insensitive check
+
+            # 优先检查更明确的带引号的关键词
+            if "\"TOOL_APPROVED\"" in raw_response_upper:
+                 logger.warning("Fallback: 检测到 '\"TOOL_APPROVED\"' 关键词。")
+                 return {
+                     "type": "TOOL_APPROVED",
+                     "message": "",
+                     "reasoning": "Fallback: Parsed 'TOOL_APPROVED' keyword from raw text after JSON failure."
+                 }
+            elif "\"TOOL_REJECTED\"" in raw_response_upper:
+                 logger.warning("Fallback: 检测到 '\"TOOL_REJECTED\"' 关键词。")
+                 return {
+                     "type": "TOOL_REJECTED",
+                     "message": "Fallback: Rejected tool use based on raw text.", # Provide a generic message
+                     "reasoning": "Fallback: Parsed 'TOOL_REJECTED' keyword from raw text after JSON failure."
+                 }
+            elif "\"TASK_COMPLETED\"" in raw_response_upper:
+                 logger.warning("Fallback: 检测到 '\"TASK_COMPLETED\"' 关键词。")
+                 return {
+                     "type": "TASK_COMPLETED",
+                     "message": "",
+                     "reasoning": "Fallback: Parsed 'TASK_COMPLETED' keyword from raw text after JSON failure."
+                 }
+            # 如果带引号的找不到，尝试不带引号的（降低可靠性，但增加找到的可能性）
+            elif "TOOL_APPROVED" in raw_response_upper:
+                 logger.warning("Fallback: 检测到 'TOOL_APPROVED' (无引号) 关键词。")
+                 return {
+                     "type": "TOOL_APPROVED",
+                     "message": "",
+                     "reasoning": "Fallback: Parsed 'TOOL_APPROVED' keyword (no quotes) from raw text after JSON failure."
+                 }
+            elif "TOOL_REJECTED" in raw_response_upper:
+                 logger.warning("Fallback: 检测到 'TOOL_REJECTED' (无引号) 关键词。")
+                 return {
+                     "type": "TOOL_REJECTED",
+                     "message": "Fallback: Rejected tool use based on raw text (no quotes).",
+                     "reasoning": "Fallback: Parsed 'TOOL_REJECTED' keyword (no quotes) from raw text after JSON failure."
+                 }
+            elif "TASK_COMPLETED" in raw_response_upper:
+                 logger.warning("Fallback: 检测到 'TASK_COMPLETED' (无引号) 关键词。")
+                 return {
+                     "type": "TASK_COMPLETED",
+                     "message": "",
+                     "reasoning": "Fallback: Parsed 'TASK_COMPLETED' keyword (no quotes) from raw text after JSON failure."
+                 }
+            else:
+                 # --- 如果连关键词都找不到，才返回默认的 TEXT_RESPONSE ---
+                 logger.warning("Fallback: 无法从原始响应中解析JSON或识别任何操作关键词。")
+                 return {
+                     "type": "TEXT_RESPONSE",
+                     "message": "继续对话",
+                     "reasoning": "Fallback: Could not parse JSON or find action keywords in raw text."
+                 }
+            # --- Fallback Logic End --- 
