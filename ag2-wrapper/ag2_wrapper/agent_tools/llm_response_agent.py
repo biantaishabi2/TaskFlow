@@ -98,27 +98,49 @@ class LLMResponseAgent:
         
         # 直接同步调用 LLM
         try:
+            logger.info("尝试使用 gemini/gemini-2.0-flash 进行 LLM 调用...")
             response = litellm.completion(
-                model="gemini/gemini-2.5-pro-exp-03-25",
+                model="gemini/gemini-2.0-flash",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=2048
             )
             llm_response = response.choices[0].message.content
-            
+            logger.info("Gemini LLM 调用成功。")
+
             # 解析LLM响应
             parsed_response = self._parse_llm_response(llm_response)
-            
+
             return parsed_response
-            
-        except Exception as e:
-            logger.error(f"LLM调用失败: {str(e)}")
-            # 返回默认响应
-            return {
-                "type": ResponseType.TEXT_RESPONSE,
-                "message": "继续对话",
-                "reasoning": "LLM调用失败，默认继续对话"
-            }
+
+        except Exception as e_primary:
+            logger.error(f"主LLM (gemini/gemini-2.0-flash) 调用失败: {str(e_primary)}")
+            logger.info("尝试使用备选 LLM (openrouter/deepseek/deepseek-chat)...")
+
+            # --- 备选 LLM 调用 ---
+            try:
+                response = litellm.completion(
+                    model="openrouter/deepseek/deepseek-chat", # 使用 DeepSeek 作为备选
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1,
+                    max_tokens=2048
+                )
+                llm_response = response.choices[0].message.content
+                logger.info("备选 LLM (DeepSeek) 调用成功。")
+
+                # 解析备选LLM响应
+                parsed_response = self._parse_llm_response(llm_response)
+                return parsed_response
+
+            except Exception as e_fallback:
+                logger.error(f"备选 LLM (openrouter/deepseek/deepseek-chat) 调用也失败: {str(e_fallback)}")
+                # 两个LLM都失败，返回默认响应
+                return {
+                    "type": ResponseType.TEXT_RESPONSE,
+                    "message": "继续对话",
+                    "reasoning": "主LLM和备选LLM调用均失败，默认继续对话"
+                }
+            # --- 备选 LLM 调用结束 ---
     
     def _build_prompt(self, chat_history: List[Dict[str, Any]], task_description: str) -> str:
         """构建提示词 (处理包含 sender_name 的 JSON 消息表示)"""
