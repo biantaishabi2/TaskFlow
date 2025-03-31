@@ -250,7 +250,9 @@ class AG2TwoAgentExecutor:
         # 初始化工具加载器
         self.tool_loader = ToolLoader()
         
-        # 使用标准配置格式
+        # 使用标准配置格式，添加从config获取的温度参数
+        temperature = config.config.get('llm', {}).get('temperature', 0.1)
+        
         self.llm_config = {
             "config_list": [
                 {
@@ -259,7 +261,7 @@ class AG2TwoAgentExecutor:
                     "api_key": os.environ.get("OPENROUTER_API_KEY")
                 }
             ],
-            "temperature": 0.1,
+            "temperature": temperature,
             "cache_seed": 42,
         }
         

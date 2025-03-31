@@ -100,7 +100,7 @@ class LLMResponseAgent:
         try:
             logger.info("尝试使用 gemini/gemini-2.0-flash 进行 LLM 调用...")
             response = litellm.completion(
-                model="gemini/gemini-2.0-flash",
+                model="gemini/gemini-2.5-pro-exp-03-25",
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
                 max_tokens=2048

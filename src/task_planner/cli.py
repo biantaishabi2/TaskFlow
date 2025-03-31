@@ -5,8 +5,17 @@ import os
 import importlib.util
 import time
 import json
+import asyncio
 from datetime import datetime
 import logging
+
+# 尝试导入AG2相关模块
+try:
+    from ag2_wrapper.core.ag2_two_agent_executor import AG2TwoAgentExecutor
+    from ag2_wrapper.core.config import ConfigManager
+    _HAS_AG2 = True
+except ImportError:
+    _HAS_AG2 = False
 
 # 配置日志
 logging.basicConfig(
@@ -38,6 +47,10 @@ def main():
   
   # 执行已拆分的子任务
   task-planner run-subtasks -f subtasks.json
+  
+  # 启动交互式对话模式
+  task-planner chat
+  task-planner chat --prompt "帮我分析当前项目结构"
   
   # 运行分布式任务系统
   task-planner distributed --mode master --api-port 5000 --task "创建一个博客系统"
@@ -89,6 +102,30 @@ def main():
                            help='Web服务器端口号')
     viz_parser.add_argument('--api-url', type=str, required=True,
                            help='任务API服务URL地址')
+                           
+    # 交互式对话命令
+    chat_parser = subparsers.add_parser('chat',
+        help='开始与AG2执行器的交互式对话',
+        description='启动交互式对话模式，与AG2执行器直接交互',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+示例:
+  # 启动默认交互式对话
+  task-planner chat
+  
+  # 指定初始提示
+  task-planner chat --prompt "帮我分析当前目录的Python代码"
+  
+  # 设置模型参数
+  task-planner chat --temperature 0.7
+'''
+    )
+    chat_parser.add_argument('--prompt', type=str,
+                           help='对话的初始提示(可选)')
+    chat_parser.add_argument('--temperature', type=float, default=0.1,
+                           help='生成文本的随机性(0.0-1.0，默认0.1)')
+    chat_parser.add_argument('--logs-dir', help='日志保存目录(默认: logs)', 
+                           default='logs')
     
     # 单个任务执行命令
     task_parser = subparsers.add_parser('execute', 
@@ -382,6 +419,105 @@ def main():
             logger.error(f"子任务执行失败: {str(e)}")
             return 1
     
+    elif args.command == 'chat':
+        # 检查AG2是否可用
+        if not _HAS_AG2:
+            print("错误: 未能导入AG2相关模块，请确保ag2-wrapper已正确安装")
+            print("提示: 请尝试在项目根目录执行 'pip install -e ag2-wrapper'")
+            return 1
+            
+        try:
+            # 确保能找到AG2模块
+            sys.path.insert(0, base_dir)
+            
+            print("正在初始化AG2对话执行器...")
+            
+            # 确保日志目录存在
+            os.makedirs(args.logs_dir, exist_ok=True)
+            
+            # 使用用户指定的温度参数创建配置
+            from ag2_wrapper.core.config import ConfigManager
+            config = ConfigManager()
+            config.set_config('temperature', args.temperature)
+            
+            # 打印温度参数
+            print(f"使用温度参数: {args.temperature}")
+            
+            # 创建AG2执行器实例
+            executor = asyncio.run(AG2TwoAgentExecutor.create(config=config))
+            
+            # 定义助手回复处理函数
+            def process_and_print_response(result):
+                """处理AG2返回结果并打印到控制台"""
+                if not result.get('success', False):
+                    print(f"错误: {result.get('error_msg', '未知错误')}")
+                    return
+
+                # 尝试获取最后一条助手消息
+                if 'result' in result and hasattr(result['result'], 'chat_history'):
+                    chat_history = result['result'].chat_history
+                    assistant_message = None
+                    
+                    # 获取最后一条助手的消息
+                    for msg in reversed(chat_history):
+                        name = getattr(msg, 'name', None)
+                        if name in ['助手代理', '任务助手', 'task_assistant', '助手']:
+                            assistant_message = getattr(msg, 'content', None)
+                            if assistant_message:
+                                print("\n" + assistant_message)
+                                break
+                    
+                    if not assistant_message:
+                        print("(无法获取助手回复)")
+                else:
+                    print("(无法获取对话历史)")
+            
+            # 如果提供了初始提示，发送它
+            if args.prompt:
+                print("\n" + "-" * 40)
+                print(f"发送初始提示: {args.prompt}")
+                print("-" * 40)
+                
+                result = executor.execute(args.prompt)
+                process_and_print_response(result)
+            
+            # 交互式对话循环
+            print("\n" + "=" * 60)
+            print("AG2交互式对话模式已启动。输入 'exit' 或 'quit' 退出。")
+            print("=" * 60)
+            
+            while True:
+                try:
+                    # 获取用户输入
+                    user_input = input("\n>>> ")
+                    
+                    # 检查是否退出
+                    if user_input.lower() in ['exit', 'quit', '退出']:
+                        print("退出对话模式。")
+                        break
+                        
+                    if not user_input.strip():
+                        continue
+                        
+                    # 发送用户输入到AG2执行器
+                    result = executor.execute(user_input)
+                    
+                    # 处理并打印响应
+                    process_and_print_response(result)
+                
+                except KeyboardInterrupt:
+                    print("\n收到中断信号，退出对话模式。")
+                    break
+                except Exception as e:
+                    print(f"发生错误: {str(e)}")
+                    logger.error(f"对话执行错误: {str(e)}", exc_info=True)
+                    
+            print("AG2对话模式已关闭。")
+                
+        except ImportError as e:
+            print(f"Error: 无法导入必要的模块: {e}")
+            return 1
+            
     else:
         parser.print_help()
         

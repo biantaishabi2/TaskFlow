@@ -235,6 +235,29 @@ class ConfigManager:
         """
         return self.config.get("chat_modes", {}).get(mode_name)
 
+    def set_config(self, key: str, value: Any, section: Optional[str] = None) -> None:
+        """
+        设置配置项
+        
+        Args:
+            key: 配置键
+            value: 配置值
+            section: 可选的配置分区名称(如'llm', 'agents', 'tools')
+                    如果未提供，则直接设置顶层配置项
+        """
+        if section:
+            if section not in self.config:
+                self.config[section] = {}
+            self.config[section][key] = value
+        else:
+            # 检查是否能内联设置LLM配置参数
+            if key == 'temperature' and isinstance(value, (int, float)):
+                if 'llm' not in self.config:
+                    self.config['llm'] = {}
+                self.config['llm']['temperature'] = value
+            else:
+                self.config[key] = value
+
 
 # 便捷函数
 def create_openai_config(model: str = "gpt-3.5-turbo",
