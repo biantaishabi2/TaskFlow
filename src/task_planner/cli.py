@@ -48,9 +48,13 @@ def main():
   # 执行已拆分的子任务
   task-planner run-subtasks -f subtasks.json
   
-  # 启动交互式对话模式
+  # 启动交互式对话模式（与真人交互）
   task-planner chat
   task-planner chat --prompt "帮我分析当前项目结构"
+  
+  # 启动自动化对话模式（LLM驱动模式）
+  task-planner agent
+  task-planner agent --prompt "帮我分析当前项目结构"
   
   # 运行分布式任务系统
   task-planner distributed --mode master --api-port 5000 --task "创建一个博客系统"
@@ -103,14 +107,14 @@ def main():
     viz_parser.add_argument('--api-url', type=str, required=True,
                            help='任务API服务URL地址')
                            
-    # 交互式对话命令
+    # 交互式对话命令 - 与真人交互
     chat_parser = subparsers.add_parser('chat',
-        help='开始与AG2执行器的交互式对话',
-        description='启动交互式对话模式，与AG2执行器直接交互',
+        help='开始与AG2执行器的交互式对话（真人输入模式）',
+        description='启动交互式对话模式，与AG2执行器直接交互，使用真人输入',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 示例:
-  # 启动默认交互式对话
+  # 启动交互式对话（真人输入模式）
   task-planner chat
   
   # 指定初始提示
@@ -125,6 +129,30 @@ def main():
     chat_parser.add_argument('--temperature', type=float, default=0.1,
                            help='生成文本的随机性(0.0-1.0，默认0.1)')
     chat_parser.add_argument('--logs-dir', help='日志保存目录(默认: logs)', 
+                           default='logs')
+    
+    # 自动化代理对话命令 - 使用LLM驱动的代理
+    agent_parser = subparsers.add_parser('agent',
+        help='开始与AG2执行器的自动化对话（LLM驱动模式）',
+        description='启动自动化对话模式，与AG2执行器交互，使用LLM驱动的用户代理',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+示例:
+  # 启动自动化对话（LLM驱动模式）
+  task-planner agent
+  
+  # 指定初始提示
+  task-planner agent --prompt "帮我分析当前目录的Python代码"
+  
+  # 设置模型参数
+  task-planner agent --temperature 0.7
+'''
+    )
+    agent_parser.add_argument('--prompt', type=str,
+                           help='对话的初始提示(可选)')
+    agent_parser.add_argument('--temperature', type=float, default=0.1,
+                           help='生成文本的随机性(0.0-1.0，默认0.1)')
+    agent_parser.add_argument('--logs-dir', help='日志保存目录(默认: logs)', 
                            default='logs')
     
     # 单个任务执行命令
@@ -419,7 +447,8 @@ def main():
             logger.error(f"子任务执行失败: {str(e)}")
             return 1
     
-    elif args.command == 'chat':
+    # 定义一个共用函数来处理chat和agent两个子命令
+    def handle_ag2_chat(command, args, use_human_input):
         # 检查AG2是否可用
         if not _HAS_AG2:
             print("错误: 未能导入AG2相关模块，请确保ag2-wrapper已正确安装")
@@ -430,7 +459,9 @@ def main():
             # 确保能找到AG2模块
             sys.path.insert(0, base_dir)
             
-            print("正在初始化AG2对话执行器...")
+            # 确定交互模式
+            mode_desc = "真人输入" if use_human_input else "LLM驱动"
+            print(f"正在初始化AG2对话执行器... (模式: {mode_desc})")
             
             # 确保日志目录存在
             os.makedirs(args.logs_dir, exist_ok=True)
@@ -443,8 +474,11 @@ def main():
             # 打印温度参数
             print(f"使用温度参数: {args.temperature}")
             
-            # 创建AG2执行器实例
-            executor = asyncio.run(AG2TwoAgentExecutor.create(config=config))
+            # 创建AG2执行器实例，根据模式设置use_human_input参数
+            executor = asyncio.run(AG2TwoAgentExecutor.create(
+                config=config, 
+                use_human_input=use_human_input
+            ))
             
             # 定义助手回复处理函数
             def process_and_print_response(result):
@@ -483,7 +517,7 @@ def main():
             
             # 交互式对话循环
             print("\n" + "=" * 60)
-            print("AG2交互式对话模式已启动。输入 'exit' 或 'quit' 退出。")
+            print(f"AG2对话模式已启动 ({mode_desc}模式)。输入 'exit' 或 'quit' 退出。")
             print("=" * 60)
             
             while True:
@@ -512,11 +546,19 @@ def main():
                     print(f"发生错误: {str(e)}")
                     logger.error(f"对话执行错误: {str(e)}", exc_info=True)
                     
-            print("AG2对话模式已关闭。")
+            print(f"AG2对话模式 ({mode_desc}) 已关闭。")
                 
         except ImportError as e:
             print(f"Error: 无法导入必要的模块: {e}")
             return 1
+    
+    # 处理chat命令（真人输入模式）
+    elif args.command == 'chat':
+        return handle_ag2_chat('chat', args, use_human_input=True)
+            
+    # 处理agent命令（LLM驱动模式）
+    elif args.command == 'agent':
+        return handle_ag2_chat('agent', args, use_human_input=False)
             
     else:
         parser.print_help()

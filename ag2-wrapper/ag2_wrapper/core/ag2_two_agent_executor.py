@@ -225,7 +225,8 @@ class AG2TwoAgentExecutor:
                  config: ConfigManager = None,
                  tool_manager: AG2ToolManager = None,
                  context_manager = None,
-                 task_context: str = ""):
+                 task_context: str = "",
+                 use_human_input: bool = False):
         """初始化双代理执行器
         
         Args:
@@ -233,6 +234,9 @@ class AG2TwoAgentExecutor:
             tool_manager: 工具管理器（可选）
             context_manager: 上下文管理器（可选，用于与TaskExecutor接口兼容）
             task_context: 任务上下文
+            use_human_input: 是否使用标准UserProxyAgent而不是LLMDrivenUserProxy
+                            设置为True时将使用标准的UserProxyAgent与真人交互
+                            设置为False时使用LLMDrivenUserProxy自动处理工具调用
         """
         self.config = config or ConfigManager()
         self.tool_manager = tool_manager or AG2ToolManager()
@@ -273,14 +277,36 @@ class AG2TwoAgentExecutor:
         self.normalize_path = lambda p: str(Path(p).resolve())
         
         self.task_context = task_context
+        self.use_human_input = use_human_input
 
     async def initialize(self):
         """异步初始化方法"""
-        # 先创建执行器代理
-        self.executor = LLMDrivenUserProxy(
-            name="用户代理",
-            human_input_mode="ALWAYS"
-        )
+        # 根据配置选择不同的用户代理类型
+        if self.use_human_input:
+            # 使用标准UserProxyAgent，允许真人输入
+            try:
+                from autogen import UserProxyAgent
+                
+                # 创建UserProxyAgent，禁用代码执行以避免安全问题
+                self.executor = UserProxyAgent(
+                    name="用户代理",
+                    human_input_mode="ALWAYS",
+                    code_execution_config=False  # 默认禁用代码执行
+                )
+                logging.info("使用标准UserProxyAgent，启用真人输入")
+            except ImportError as e:
+                logging.error(f"无法导入UserProxyAgent: {str(e)}，回退到LLMDrivenUserProxy")
+                self.executor = LLMDrivenUserProxy(
+                    name="用户代理", 
+                    human_input_mode="ALWAYS"
+                )
+        else:
+            # 使用LLMDrivenUserProxy进行自动化对话
+            self.executor = LLMDrivenUserProxy(
+                name="用户代理",
+                human_input_mode="ALWAYS"
+            )
+            logging.info("使用LLMDrivenUserProxy，自动处理工具调用")
         
         # 构建系统提示词
         system_prompt = DEFAULT_SYSTEM_PROMPT.format(
@@ -321,9 +347,21 @@ class AG2TwoAgentExecutor:
                     config: ConfigManager = None,
                     tool_manager: AG2ToolManager = None,
                     context_manager = None,
-                    task_context: str = "") -> 'AG2TwoAgentExecutor':
-        """创建并初始化执行器的工厂方法"""
-        executor = cls(config, tool_manager, context_manager, task_context)
+                    task_context: str = "",
+                    use_human_input: bool = False) -> 'AG2TwoAgentExecutor':
+        """创建并初始化执行器的工厂方法
+        
+        Args:
+            config: 配置对象
+            tool_manager: 工具管理器
+            context_manager: 上下文管理器
+            task_context: 任务上下文
+            use_human_input: 是否使用标准UserProxyAgent与真人交互
+                            默认为False，使用LLMDrivenUserProxy
+        Returns:
+            初始化后的AG2TwoAgentExecutor实例
+        """
+        executor = cls(config, tool_manager, context_manager, task_context, use_human_input)
         await executor.initialize()
         return executor
 
