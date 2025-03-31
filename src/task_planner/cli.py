@@ -8,6 +8,16 @@ import json
 import asyncio
 from datetime import datetime
 import logging
+import warnings
+
+# 抑制Pydantic和Autogen警告
+warnings.filterwarnings("ignore", 
+                       message="Valid config keys have changed in V2", 
+                       module="pydantic")
+# 抑制Autogen模型价格警告
+warnings.filterwarnings("ignore", 
+                       message="Model .* is not found. The cost will be 0.*", 
+                       module="autogen.oai.client")
 
 # 尝试导入AG2相关模块
 try:
@@ -131,11 +141,14 @@ def handle_ag2_chat(command, args, use_human_input, base_dir):
         print(f"Error: 无法导入必要的模块: {e}")
         return 1
 
-# 配置日志
+# 配置日志 - 设置较高级别以抑制警告
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.ERROR,  # 只显示错误级别及以上的日志
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+
+# 特别设置autogen.oai.client的日志级别
+logging.getLogger("autogen.oai.client").setLevel(logging.ERROR)
 logger = logging.getLogger('task_planner_cli')
 
 # 这个函数用于动态导入模块
