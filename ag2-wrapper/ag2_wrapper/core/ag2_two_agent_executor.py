@@ -283,17 +283,20 @@ class AG2TwoAgentExecutor:
         """异步初始化方法"""
         # 根据配置选择不同的用户代理类型
         if self.use_human_input:
-            # 使用标准UserProxyAgent，允许真人输入
+            # 使用标准UserProxyAgent，启用代码执行
             try:
                 from autogen import UserProxyAgent
                 
-                # 创建UserProxyAgent，禁用代码执行以避免安全问题
+                # 创建UserProxyAgent，启用代码执行
                 self.executor = UserProxyAgent(
                     name="用户代理",
                     human_input_mode="ALWAYS",
-                    code_execution_config=False  # 默认禁用代码执行
+                    code_execution_config={
+                        "work_dir": ".",  # 设置工作目录为当前目录
+                        "use_docker": False  # 不使用docker执行
+                    }
                 )
-                logging.info("使用标准UserProxyAgent，启用真人输入")
+                logging.info("使用标准UserProxyAgent，启用代码执行")
             except ImportError as e:
                 logging.error(f"无法导入UserProxyAgent: {str(e)}，回退到LLMDrivenUserProxy")
                 self.executor = LLMDrivenUserProxy(
