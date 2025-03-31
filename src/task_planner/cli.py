@@ -17,6 +17,120 @@ try:
 except ImportError:
     _HAS_AG2 = False
 
+# 定义一个共用函数来处理chat和agent两个子命令
+def handle_ag2_chat(command, args, use_human_input, base_dir):
+    """
+    处理chat和agent命令的通用函数
+    
+    Args:
+        command: 子命令名称 ('chat' 或 'agent')
+        args: 解析后的命令行参数
+        use_human_input: 是否使用标准UserProxyAgent与真人交互
+        base_dir: 基础目录路径
+    """
+    # 检查AG2是否可用
+    if not _HAS_AG2:
+        print("错误: 未能导入AG2相关模块，请确保ag2-wrapper已正确安装")
+        print("提示: 请尝试在项目根目录执行 'pip install -e ag2-wrapper'")
+        return 1
+        
+    try:
+        # 确保能找到AG2模块
+        sys.path.insert(0, base_dir)
+        
+        # 确定交互模式
+        mode_desc = "真人输入" if use_human_input else "LLM驱动"
+        print(f"正在初始化AG2对话执行器... (模式: {mode_desc})")
+        
+        # 确保日志目录存在
+        os.makedirs(args.logs_dir, exist_ok=True)
+        
+        # 使用用户指定的温度参数创建配置
+        from ag2_wrapper.core.config import ConfigManager
+        config = ConfigManager()
+        config.set_config('temperature', args.temperature)
+        
+        # 打印温度参数
+        print(f"使用温度参数: {args.temperature}")
+        
+        # 创建AG2执行器实例，根据模式设置use_human_input参数
+        executor = asyncio.run(AG2TwoAgentExecutor.create(
+            config=config, 
+            use_human_input=use_human_input
+        ))
+        
+        # 定义助手回复处理函数
+        def process_and_print_response(result):
+            """处理AG2返回结果并打印到控制台"""
+            if not result.get('success', False):
+                print(f"错误: {result.get('error_msg', '未知错误')}")
+                return
+
+            # 尝试获取最后一条助手消息
+            if 'result' in result and hasattr(result['result'], 'chat_history'):
+                chat_history = result['result'].chat_history
+                assistant_message = None
+                
+                # 获取最后一条助手的消息
+                for msg in reversed(chat_history):
+                    name = getattr(msg, 'name', None)
+                    if name in ['助手代理', '任务助手', 'task_assistant', '助手']:
+                        assistant_message = getattr(msg, 'content', None)
+                        if assistant_message:
+                            print("\n" + assistant_message)
+                            break
+                
+                if not assistant_message:
+                    print("(无法获取助手回复)")
+            else:
+                print("(无法获取对话历史)")
+        
+        # 如果提供了初始提示，发送它
+        if args.prompt:
+            print("\n" + "-" * 40)
+            print(f"发送初始提示: {args.prompt}")
+            print("-" * 40)
+            
+            result = executor.execute(args.prompt)
+            process_and_print_response(result)
+        
+        # 交互式对话循环
+        print("\n" + "=" * 60)
+        print(f"AG2对话模式已启动 ({mode_desc}模式)。输入 'exit' 或 'quit' 退出。")
+        print("=" * 60)
+        
+        while True:
+            try:
+                # 获取用户输入
+                user_input = input("\n>>> ")
+                
+                # 检查是否退出
+                if user_input.lower() in ['exit', 'quit', '退出']:
+                    print("退出对话模式。")
+                    break
+                    
+                if not user_input.strip():
+                    continue
+                    
+                # 发送用户输入到AG2执行器
+                result = executor.execute(user_input)
+                
+                # 处理并打印响应
+                process_and_print_response(result)
+            
+            except KeyboardInterrupt:
+                print("\n收到中断信号，退出对话模式。")
+                break
+            except Exception as e:
+                print(f"发生错误: {str(e)}")
+                logger.error(f"对话执行错误: {str(e)}", exc_info=True)
+                
+        print(f"AG2对话模式 ({mode_desc}) 已关闭。")
+            
+    except ImportError as e:
+        print(f"Error: 无法导入必要的模块: {e}")
+        return 1
+
 # 配置日志
 logging.basicConfig(
     level=logging.INFO,
@@ -447,118 +561,13 @@ def main():
             logger.error(f"子任务执行失败: {str(e)}")
             return 1
     
-    # 定义一个共用函数来处理chat和agent两个子命令
-    def handle_ag2_chat(command, args, use_human_input):
-        # 检查AG2是否可用
-        if not _HAS_AG2:
-            print("错误: 未能导入AG2相关模块，请确保ag2-wrapper已正确安装")
-            print("提示: 请尝试在项目根目录执行 'pip install -e ag2-wrapper'")
-            return 1
-            
-        try:
-            # 确保能找到AG2模块
-            sys.path.insert(0, base_dir)
-            
-            # 确定交互模式
-            mode_desc = "真人输入" if use_human_input else "LLM驱动"
-            print(f"正在初始化AG2对话执行器... (模式: {mode_desc})")
-            
-            # 确保日志目录存在
-            os.makedirs(args.logs_dir, exist_ok=True)
-            
-            # 使用用户指定的温度参数创建配置
-            from ag2_wrapper.core.config import ConfigManager
-            config = ConfigManager()
-            config.set_config('temperature', args.temperature)
-            
-            # 打印温度参数
-            print(f"使用温度参数: {args.temperature}")
-            
-            # 创建AG2执行器实例，根据模式设置use_human_input参数
-            executor = asyncio.run(AG2TwoAgentExecutor.create(
-                config=config, 
-                use_human_input=use_human_input
-            ))
-            
-            # 定义助手回复处理函数
-            def process_and_print_response(result):
-                """处理AG2返回结果并打印到控制台"""
-                if not result.get('success', False):
-                    print(f"错误: {result.get('error_msg', '未知错误')}")
-                    return
-
-                # 尝试获取最后一条助手消息
-                if 'result' in result and hasattr(result['result'], 'chat_history'):
-                    chat_history = result['result'].chat_history
-                    assistant_message = None
-                    
-                    # 获取最后一条助手的消息
-                    for msg in reversed(chat_history):
-                        name = getattr(msg, 'name', None)
-                        if name in ['助手代理', '任务助手', 'task_assistant', '助手']:
-                            assistant_message = getattr(msg, 'content', None)
-                            if assistant_message:
-                                print("\n" + assistant_message)
-                                break
-                    
-                    if not assistant_message:
-                        print("(无法获取助手回复)")
-                else:
-                    print("(无法获取对话历史)")
-            
-            # 如果提供了初始提示，发送它
-            if args.prompt:
-                print("\n" + "-" * 40)
-                print(f"发送初始提示: {args.prompt}")
-                print("-" * 40)
-                
-                result = executor.execute(args.prompt)
-                process_and_print_response(result)
-            
-            # 交互式对话循环
-            print("\n" + "=" * 60)
-            print(f"AG2对话模式已启动 ({mode_desc}模式)。输入 'exit' 或 'quit' 退出。")
-            print("=" * 60)
-            
-            while True:
-                try:
-                    # 获取用户输入
-                    user_input = input("\n>>> ")
-                    
-                    # 检查是否退出
-                    if user_input.lower() in ['exit', 'quit', '退出']:
-                        print("退出对话模式。")
-                        break
-                        
-                    if not user_input.strip():
-                        continue
-                        
-                    # 发送用户输入到AG2执行器
-                    result = executor.execute(user_input)
-                    
-                    # 处理并打印响应
-                    process_and_print_response(result)
-                
-                except KeyboardInterrupt:
-                    print("\n收到中断信号，退出对话模式。")
-                    break
-                except Exception as e:
-                    print(f"发生错误: {str(e)}")
-                    logger.error(f"对话执行错误: {str(e)}", exc_info=True)
-                    
-            print(f"AG2对话模式 ({mode_desc}) 已关闭。")
-                
-        except ImportError as e:
-            print(f"Error: 无法导入必要的模块: {e}")
-            return 1
-    
     # 处理chat命令（真人输入模式）
     elif args.command == 'chat':
-        return handle_ag2_chat('chat', args, use_human_input=True)
+        return handle_ag2_chat('chat', args, use_human_input=True, base_dir=base_dir)
             
     # 处理agent命令（LLM驱动模式）
     elif args.command == 'agent':
-        return handle_ag2_chat('agent', args, use_human_input=False)
+        return handle_ag2_chat('agent', args, use_human_input=False, base_dir=base_dir)
             
     else:
         parser.print_help()
