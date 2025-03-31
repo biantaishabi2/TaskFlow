@@ -47,13 +47,15 @@ task-planner --help
 
 系统提供以下主要子命令：
 
-| 命令          | 描述                   | 示例                                 |
-|---------------|------------------------|--------------------------------------|
-| plan          | 分析并规划任务         | `task-planner plan "任务描述"`        |
-| execute       | 执行新任务             | `task-planner execute "任务描述"`     |
-| run-subtasks  | 执行预定义子任务文件   | `task-planner run-subtasks tasks.json`|
-| api           | 运行任务API服务器      | `task-planner api`                    |
-| visualization | 运行可视化服务器       | `task-planner visualization`          |
+| 命令          | 描述                           | 示例                                       |
+|---------------|--------------------------------|--------------------------------------------|
+| plan          | 分析并规划任务                 | `task-planner plan "任务描述"`             |
+| execute       | 执行新任务                     | `task-planner execute "任务描述"`          |
+| run-subtasks  | 执行预定义子任务文件           | `task-planner run-subtasks tasks.json`     |
+| chat          | 启动真人交互式对话模式         | `task-planner chat`                        |
+| agent         | 启动LLM驱动的自动化对话模式    | `task-planner agent`                       |
+| api           | 运行任务API服务器              | `task-planner api`                         |
+| visualization | 运行可视化服务器               | `task-planner visualization`               |
 
 #### 1. 分析和规划任务
 ```bash
@@ -116,6 +118,51 @@ task-planner visualization [选项]
 # 示例：
 task-planner visualization --port 8080
 ```
+
+#### 6. 交互式对话模式
+系统提供了两种交互式对话模式：
+
+##### 6.1 真人交互式对话模式（chat）
+使用`chat`子命令启动真人交互式对话，允许用户直接与AG2执行器交互：
+
+```bash
+# 启动基本交互式对话
+task-planner chat
+
+# 指定初始提示
+task-planner chat --prompt "帮我分析当前目录的Python代码"
+
+# 设置模型温度参数（控制创造性，0.0-1.0）
+task-planner chat --temperature 0.7
+```
+
+支持的选项：
+- `--prompt TEXT`: 初始对话提示
+- `--temperature FLOAT`: 生成文本的随机性参数（0.0-1.0），默认0.1
+- `--logs-dir DIR`: 日志目录
+
+这种模式使用标准的UserProxyAgent，用户需要亲自输入每条消息。
+
+##### 6.2 LLM驱动的自动化对话模式（agent）
+使用`agent`子命令启动LLM驱动的自动化对话，由LLM自动判断并执行工具调用：
+
+```bash
+# 启动自动化对话
+task-planner agent
+
+# 指定初始提示
+task-planner agent --prompt "帮我分析当前项目结构"
+
+# 设置模型温度参数
+task-planner agent --temperature 0.7
+```
+
+支持的选项：
+- `--prompt TEXT`: 初始对话提示
+- `--temperature FLOAT`: 生成文本的随机性参数（0.0-1.0），默认0.1
+- `--logs-dir DIR`: 日志目录
+
+这种模式使用LLMDrivenUserProxy，自动处理工具调用，无需用户每次手动确认。
 
 #### 执行器选择
 
@@ -244,8 +291,10 @@ result = system_claude.execute_complex_task("我的复杂任务描述")
 context_manager = ContextManager(context_dir="custom_context")
 planner = TaskPlanner("我的复杂任务描述", context_manager=context_manager)
 
-# 使用AG2执行器（推荐）
-executor = AG2TwoAgentExecutor()
+# 使用AG2执行器（推荐）- LLM驱动模式
+executor = AG2TwoAgentExecutor(use_human_input=False)  # 默认模式
+# 使用AG2执行器 - 真人交互模式
+# executor = AG2TwoAgentExecutor(use_human_input=True)
 # 或使用Claude执行器
 # executor = TaskExecutor(context_manager=context_manager, use_gemini=True)
 
@@ -303,6 +352,8 @@ for subtask in subtasks:
 - **集群聊天(Swarm)**：多个agent协同解决问题
 - **序列聊天(Sequential)**：多个agent按顺序处理任务
 - **双Agent聊天(Two-Agent)**：两个agent协作处理任务
+  - **LLM驱动模式**：使用LLMDrivenUserProxy自动处理工具调用
+  - **真人交互模式**：使用UserProxyAgent允许用户直接参与对话
 - **群组聊天(Group)**：多个agent以小组形式协作
 - **嵌套聊天(Nested)**：支持agent之间的嵌套对话
 
