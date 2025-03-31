@@ -30,10 +30,15 @@
 确保系统已安装Python 3.8+，然后安装本项目：
 
 ```bash
-# 从源码安装
+# 从源码安装 (使用pip)
 git clone git@github.com:biantaishabi2/TaskFlow.git
 cd TaskFlow
 pip install -e .
+
+# 使用uv加速安装（推荐）
+git clone git@github.com:biantaishabi2/TaskFlow.git
+cd TaskFlow
+uv pip install -e .
 ```
 
 ### 命令行使用
@@ -554,6 +559,27 @@ export TASK_PLANNER_CONTEXT_DIR="custom_context"
 # 执行超时设置（秒，默认500秒）
 export TASK_EXECUTOR_TIMEOUT="500"
 ```
+
+### 使用uv管理依赖
+
+本项目支持使用[uv](https://github.com/astral-sh/uv)加速依赖安装和管理。uv是一个用Rust编写的Python包管理器，比传统pip更快：
+
+```bash
+# 安装项目和所有依赖（包括AG2-wrapper）
+uv pip install -e .
+
+# 创建依赖锁文件（可选，用于环境复现）
+uv pip compile pyproject.toml -o uv.lock
+
+# 根据锁文件安装依赖（确保环境一致）
+uv pip install -r uv.lock
+```
+
+使用uv的主要优势：
+- 更快的依赖解析和安装速度
+- 支持多Python版本
+- 自动管理本地依赖（如AG2-wrapper）
+- 可靠的依赖锁定机制
 
 ### 配置文件
 
