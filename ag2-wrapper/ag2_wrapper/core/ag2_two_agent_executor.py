@@ -337,7 +337,36 @@ class AG2TwoAgentExecutor:
             llm_config=self.llm_config
         )
         
-        # 初始化工具
+        # --- MCPTool Internal Initialization ---
+        logging.info("MCPTool instance not provided externally, attempting internal initialization...")
+        try:
+            # Import MCPClient/MCPTool and config functions here
+            from ag2_wrapper.agent_tools.MCPTool import MCPClient, MCPTool
+            from ag2_wrapper.agent_tools.MCPTool.config import list_servers
+            
+            # Check if any servers are configured via MCP's standard config mechanism
+            available_servers = list_servers()
+            
+            if available_servers:
+                logging.info(f"Found MCP server configurations via MCP config system: {list(available_servers.keys())}")
+                
+                # MCPClient constructor will use list_servers() internally to load configs
+                logging.debug("Creating and initializing internal MCPClient (will load from MCP configs)...")
+                mcp_client = MCPClient()
+                await mcp_client.initialize() # Initialize connections based on loaded configs
+                self.mcp_tool = MCPTool(mcp_client) # Assign to self.mcp_tool
+                logging.info("Internal MCPTool initialized successfully using MCP config system.")
+                
+            else:
+                logging.warning("Internal MCPTool initialization skipped: No servers found via MCP config system (e.g., in ./.mcp/config.json).")
+        
+        except ImportError as e_import:
+             logging.error(f"Internal MCPTool initialization failed: Could not import MCPTool or MCPClient. {e_import}", exc_info=True)
+        except Exception as e_init:
+             logging.error(f"Internal MCPTool initialization failed: {e_init}", exc_info=True)
+        # --- End MCPTool Internal Initialization ---
+
+        # 初始化工具 (Now uses either externally provided or internally initialized self.mcp_tool)
         await self._initialize_tools()
         
         # 获取已加载的工具列表并更新系统提示词
