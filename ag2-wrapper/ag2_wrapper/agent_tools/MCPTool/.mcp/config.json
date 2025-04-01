@@ -11,41 +11,6 @@
         "TZ": "UTC"
       },
       "url": null
-    },
-    "test1": {
-      "type": "stdio",
-      "command": "echo",
-      "args": [
-        "Hello World"
-      ],
-      "env": null,
-      "url": null
-    },
-    "test2": {
-      "type": "sse",
-      "command": null,
-      "args": null,
-      "env": null,
-      "url": "http://localhost:3000/api"
-    },
-    "mock_server": {
-      "type": "stdio",
-      "command": "echo",
-      "args": [
-        "'{\"result\": {\"status\": \"ok\"}}'"
-      ],
-      "env": null,
-      "url": null
-    },
-    "everything": {
-      "type": "stdio",
-      "command": "npx",
-      "args": [
-        "-y",
-        "@modelcontextprotocol/server-everything"
-      ],
-      "env": null,
-      "url": null
     }
   }
 }
