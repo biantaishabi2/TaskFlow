@@ -276,7 +276,13 @@ class MCPServer:
                 arguments = params.get("arguments", {})
                 
                 logger.info(f"执行工具 {tool_name} 使用参数: {arguments}")
-                result = await self.session.call_tool(tool_name, arguments)
+                logger.info(f"[MCPServer.call]即将调用 await session.call_tool('{tool_name}')...")
+                try:
+                    result = await self.session.call_tool(tool_name, arguments)
+                    logger.info(f"[MCPServer.call] await session.call_tool('{tool_name}') 返回，结果类型: {type(result)}")
+                except Exception as call_tool_exc:
+                    logger.error(f"[MCPServer.call] await session.call_tool('{tool_name}') 抛出异常: {call_tool_exc}", exc_info=True)
+                    raise MCPError(f"call_tool failed: {str(call_tool_exc)}") from call_tool_exc
                 
                 # 处理结果
                 if result is None:
