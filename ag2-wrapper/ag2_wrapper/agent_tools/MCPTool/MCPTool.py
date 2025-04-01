@@ -9,6 +9,7 @@ import logging
 import asyncio
 import functools
 from typing import Any, Dict, List, Optional, Tuple, Callable
+import sys
 
 from .client_sdk import MCPClient, MCPError, TransportError
 
@@ -174,16 +175,26 @@ class MCPTool:
         Returns:
             工具执行结果
         """
+        logger.info(f"[MCPTool] Preparing to execute '{tool_name}' via MCPClient...")
+        print(f"[MCPTool] Preparing to execute '{tool_name}' via MCPClient...", file=sys.stderr, flush=True)
+        
+        # Call the client's execute_tool method
         try:
             result = await self.client.execute_tool(server_name, tool_name, parameters)
-            return self._normalize_result(result)
-        except (MCPError, TransportError) as e:
-            logger.error(f"工具执行失败: {str(e)}")
-            return {
-                "error": True,
-                "message": str(e),
-                "content": [{"type": "text", "text": f"工具执行失败: {str(e)}"}]
-            }
+            
+            logger.info(f"[MCPTool] MCPClient execute_tool returned successfully for '{tool_name}'.")
+            print(f"[MCPTool] MCPClient execute_tool returned successfully for '{tool_name}'.", file=sys.stderr, flush=True)
+            
+        except Exception as e:
+            logger.error(f"[MCPTool] Error calling self.client.execute_tool for '{tool_name}': {e}", exc_info=True)
+            raise # Re-raise the exception to be handled by the caller (e.g., AutoGen)
+
+        # Normalize the result before returning
+        normalized_result = self._normalize_result(result)
+        logger.info(f"[MCPTool] Execution result normalized for '{tool_name}'.")
+        print(f"[MCPTool] Execution result normalized for '{tool_name}'.", file=sys.stderr, flush=True)
+        
+        return normalized_result
     
     def _normalize_result(self, mcp_result: Dict[str, Any]) -> Dict[str, Any]:
         """标准化MCP结果格式
