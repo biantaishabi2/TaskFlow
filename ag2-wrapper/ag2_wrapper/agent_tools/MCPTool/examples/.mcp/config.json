@@ -1,0 +1,16 @@
+{
+  "mcp_servers": {
+    "time": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "-m",
+        "mcp_server_time"
+      ],
+      "env": {
+        "TZ": "UTC"
+      },
+      "url": null
+    }
+  }
+}
