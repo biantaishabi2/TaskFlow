@@ -9,6 +9,7 @@ import logging
 import asyncio
 import functools
 from typing import Any, Dict, List, Optional, Tuple, Callable
+import sys
 
 from .client_sdk import MCPClient, MCPError, TransportError
 
@@ -65,6 +66,15 @@ class MCPTool:
         Returns:
             AG2格式的工具定义
         """
+        # 处理可能的列表类型
+        if isinstance(mcp_tool, list):
+            logger.warning(f"工具定义为列表类型，尝试转换第一个元素: {mcp_tool}")
+            if len(mcp_tool) > 0:
+                mcp_tool = mcp_tool[0]
+            else:
+                logger.error("工具定义列表为空")
+                mcp_tool = {"name": "unknown", "description": "空工具定义"}
+        
         tool_name = mcp_tool.get("name", "unknown")
         description = mcp_tool.get("description", "")
         
@@ -83,36 +93,72 @@ class MCPTool:
         return ag2_tool
     
     def _convert_parameters(self, mcp_params: Dict[str, Any]) -> Dict[str, Any]:
-        """将MCP参数转换为AG2参数格式
-        
-        Args:
-            mcp_params: MCP参数定义
-            
-        Returns:
-            AG2格式的参数定义
-        """
-        # 简单的参数转换，保持原始参数结构
-        # 在实际应用中，可能需要更复杂的转换逻辑
+        """将MCP参数(inputSchema)转换为AG2兼容的JSON Schema参数格式"""
         ag2_params = {
             "type": "object",
             "properties": {},
             "required": []
         }
-        
+
+        if not isinstance(mcp_params, dict):
+            logger.warning(f"MCP参数格式无效，预期为字典，实际为: {type(mcp_params)}. 返回空参数定义。")
+            # 如果输入不是字典，直接返回默认空结构，避免后续错误
+            return ag2_params
+
+        # 遍历MCP参数字典的顶层键（预期为参数名）
         for param_name, param_info in mcp_params.items():
-            # 参数信息转换
-            param_type = param_info.get("type", "string")
-            param_desc = param_info.get("description", "")
-            
-            ag2_params["properties"][param_name] = {
-                "type": param_type,
-                "description": param_desc
-            }
-            
-            # 处理必填参数
-            if param_info.get("required", False):
-                ag2_params["required"].append(param_name)
-        
+            prop_definition = {} # 用于存储当前参数的JSON Schema定义
+
+            if isinstance(param_info, dict):
+                # 如果param_info是字典，从中提取类型、描述等
+                prop_definition["type"] = param_info.get("type", "string") # 默认为string类型
+                prop_definition["description"] = param_info.get("description", "")
+
+                # 添加其他可能的JSON Schema属性
+                if "enum" in param_info:
+                    prop_definition["enum"] = param_info["enum"]
+                if "default" in param_info:
+                    prop_definition["default"] = param_info["default"]
+                # 可以根据需要添加更多属性 (e.g., format, pattern, items for array type)
+
+                # 检查参数是否必需
+                # 假设必需信息存储在param_info字典的 "required" 键中
+                if param_info.get("required", False):
+                     # 只有当参数被标记为必需时，才添加到顶层的required列表
+                     if param_name not in ag2_params["required"]:
+                          ag2_params["required"].append(param_name)
+
+            elif isinstance(param_info, str):
+                 # 如果param_info只是一个字符串，将其用作描述，类型默认为string
+                 prop_definition["type"] = "string"
+                 prop_definition["description"] = param_info
+                 logger.warning(f"参数 '{param_name}' 的定义是一个字符串，已将其用作描述。")
+
+            elif isinstance(param_info, list):
+                 # 如果是列表，假设是枚举值
+                 prop_definition["type"] = "string" # 或者根据列表内容判断类型？默认为string
+                 prop_definition["description"] = f"可选值: {', '.join(map(str, param_info))}"
+                 prop_definition["enum"] = param_info
+                 logger.warning(f"参数 '{param_name}' 的定义是一个列表，已将其视为枚举值。")
+            else:
+                # 处理其他意外类型
+                prop_definition["type"] = "string" # 仍然默认为string
+                prop_definition["description"] = f"未知的参数定义类型: {type(param_info).__name__}"
+                logger.warning(f"参数 '{param_name}' 的定义类型未知 ({type(param_info).__name__})，已默认处理。")
+
+
+            # 将处理好的参数定义添加到 'properties' 字典中
+            if prop_definition: # 确保我们确实生成了定义
+                ag2_params["properties"][param_name] = prop_definition
+
+        # 注意：另一种可能是 'required' 是 mcp_params 顶层的一个列表
+        # 例如: mcp_params = {"properties": {...}, "required": ["p1", "p2"]}
+        # 如果是这种情况，需要调整逻辑来读取顶层的 required 列表。
+        # 但基于当前代码的尝试，我们先假设 required 在每个参数的定义里。
+
+        # 最后，清理 required 列表，确保其中只包含实际存在的属性名
+        ag2_params["required"] = [p for p in ag2_params.get("required", []) if p in ag2_params["properties"]]
+
         return ag2_params
     
     async def _execute_tool(self, 
@@ -129,16 +175,26 @@ class MCPTool:
         Returns:
             工具执行结果
         """
+        logger.info(f"[MCPTool] Preparing to execute '{tool_name}' via MCPClient...")
+        print(f"[MCPTool] Preparing to execute '{tool_name}' via MCPClient...", file=sys.stderr, flush=True)
+        
+        # Call the client's execute_tool method
         try:
             result = await self.client.execute_tool(server_name, tool_name, parameters)
-            return self._normalize_result(result)
-        except (MCPError, TransportError) as e:
-            logger.error(f"工具执行失败: {str(e)}")
-            return {
-                "error": True,
-                "message": str(e),
-                "content": [{"type": "text", "text": f"工具执行失败: {str(e)}"}]
-            }
+            
+            logger.info(f"[MCPTool] MCPClient execute_tool returned successfully for '{tool_name}'.")
+            print(f"[MCPTool] MCPClient execute_tool returned successfully for '{tool_name}'.", file=sys.stderr, flush=True)
+            
+        except Exception as e:
+            logger.error(f"[MCPTool] Error calling self.client.execute_tool for '{tool_name}': {e}", exc_info=True)
+            raise # Re-raise the exception to be handled by the caller (e.g., AutoGen)
+
+        # Normalize the result before returning
+        normalized_result = self._normalize_result(result)
+        logger.info(f"[MCPTool] Execution result normalized for '{tool_name}'.")
+        print(f"[MCPTool] Execution result normalized for '{tool_name}'.", file=sys.stderr, flush=True)
+        
+        return normalized_result
     
     def _normalize_result(self, mcp_result: Dict[str, Any]) -> Dict[str, Any]:
         """标准化MCP结果格式

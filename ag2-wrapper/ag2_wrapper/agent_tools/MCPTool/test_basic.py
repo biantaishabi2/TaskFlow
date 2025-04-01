@@ -32,6 +32,8 @@ logging.basicConfig(
 logger = logging.getLogger("MCPTool_Test")
 logger.setLevel(logging.INFO)  # 确保日志级别设置正确
 
+# 全局测试结果字典 (在函数外部定义)
+test_results = {}
 
 async def test_config():
     """测试配置管理"""
@@ -295,106 +297,115 @@ async def test_everything_server():
 
 
 async def test_time_server():
-    """测试与time服务器的连接和工具调用
+    """单独测试与 time 服务器的连接和工具调用"""
+    print("\n----- 测试 time 服务器连接 ----- ('test_time_server' function)")
     
-    这是新增的功能测试，验证与真实MCP服务器的连接流程和工具调用。
-    由于服务器可能未安装，此测试如果失败不会影响基础功能验证。
-    测试主要工具：get_current_time
-    
-    注意：设置5秒超时保护，避免测试卡住
-    """
-    print("\n----- 测试 time 服务器连接 -----")
-    
-    # 创建客户端对象
-    client = MCPClient()
+    client = MCPClient() # Create a new client instance for this test
     server = None
-    time_server_tested = False
-    time_server_succeeded = False
+    test_succeeded = False
+    test_attempted = False
     
     try:
-        # 确保客户端已经初始化
-        if not client._initialized:
-            await client.initialize()
+        # 确保客户端初始化 (加载配置)
+        await client.initialize()
 
-        # 检查 time 服务器配置是否存在 (基础测试部分应该已经添加了)
         if "time" not in client.servers:
-            # 尝试从配置加载
-            from .config import get_server
-            time_config = get_server("time")
-            if time_config:
-                logger.info(f"'time' 不在客户端实例中，但配置存在，尝试添加...")
-                client.servers["time"] = MCPServer("time", time_config)
-            else:
-                logger.warning(f"未找到 'time' 服务器配置或实例，跳过测试")
-                # Set result to skipped if config not found
-                if "time_server_connection" not in test_results:
-                    test_results["time_server_connection"] = "skipped_config_missing"
-                # Skip the rest of the block by jumping to finally or returning?
-                # For simplicity, let it fall through, error handling below will catch it if needed.
-
-        if "time" in client.servers:
-            logger.info(f"* 尝试连接服务器 'time'...")
-            server = await client.connect_server("time")
-            time_server_tested = True # Mark that we attempted connection
+             logger.warning("'time' 服务器未在配置中找到，跳过测试。确保 MCPTool/.mcp/config.json 正确。")
+             test_results["time_server_connection"] = "skipped_config_missing"
+             return False # Indicate test was skipped/failed
+        
+        logger.info(f"* 尝试连接服务器 'time'...")
+        test_attempted = True
+        # 使用超时确保连接不会无限挂起
+        try:
+            async with asyncio.timeout(10): # 10秒连接超时
+                 server = await client.connect_server("time")
             logger.info(f"* 连接服务器 'time' 成功")
+        except asyncio.TimeoutError:
+            logger.error("* 连接 'time' 服务器超时！(10s)")
+            raise # Re-raise to be caught by the outer try block
+        except Exception as conn_e:
+             logger.error(f"* 连接 'time' 服务器时发生意外错误: {conn_e}", exc_info=True)
+             raise # Re-raise
 
-            logger.info(f"* 获取 'time' 工具列表...")
-            tools = await server.list_tools()
+        logger.info(f"* 获取 'time' 工具列表...")
+        try:
+            async with asyncio.timeout(5): # 5秒获取列表超时
+                tools = await server.list_tools()
             logger.info(f"* 获取到 {len(tools)} 个工具")
             if not tools:
-                logger.warning("警告：获取到的工具列表为空！")
+                 logger.warning("警告：获取到的工具列表为空！")
             for i, tool in enumerate(tools):
                 tool_name = tool.get('name', 'N/A')
                 tool_desc = tool.get('description', 'N/A')
                 logger.info(f"* 工具 {i+1}: {tool_name} - {tool_desc}")
+        except asyncio.TimeoutError:
+             logger.error("* 获取 'time' 工具列表超时！(5s)")
+             raise
+        except Exception as list_e:
+             logger.error(f"* 获取 'time' 工具列表时发生意外错误: {list_e}", exc_info=True)
+             raise
 
-            # （可选）尝试执行工具
-            if any(t.get("name") == "get_current_time" for t in tools):
-                logger.info(f"* 测试 'time' 的 get_current_time 工具...")
-                try:
-                    exec_args = {"timezone": "UTC"}
-                    logger.info(f"  执行参数: {exec_args}")
+        # 尝试执行 get_current_time 工具
+        if any(t.get("name") == "get_current_time" for t in tools):
+            logger.info(f"* 测试 'time' 的 get_current_time 工具...")
+            try:
+                exec_args = {"timezone": "Asia/Tokyo"} # 使用一个具体的时区
+                logger.info(f"  执行参数: {exec_args}")
+                async with asyncio.timeout(10): # 10秒执行超时
+                    # --- 核心调用 --- 
                     result = await server.execute_tool("get_current_time", exec_args)
-                    logger.info(f"* Time工具执行成功")
-                    # Log result content safely
-                    content_list = result.get('content', [])
-                    if content_list and isinstance(content_list, list):
-                        content_text = content_list[0].get('text', 'N/A') if content_list else 'N/A'
-                        logger.info(f"  结果内容 (前100字符): {content_text[:100]}")
-                    else:
-                        logger.info(f"  结果: {result}")
-                except Exception as exec_e:
-                    logger.error(f"* Time工具执行失败: {exec_e}", exc_info=True) # Log traceback
-            else:
-                logger.warning(f"* 未在列表中找到 'get_current_time' 工具，跳过执行测试")
+                    # ----------------
+                logger.info(f"* Time工具执行成功")
+                content_list = result.get('content', [])
+                if content_list and isinstance(content_list, list):
+                     content_text = content_list[0].get('text', 'N/A') if content_list else 'N/A'
+                     logger.info(f"  结果内容 (前100字符): {content_text[:100]}")
+                else:
+                     logger.info(f"  结果: {result}")
+            except asyncio.TimeoutError:
+                 logger.error("* 执行 'get_current_time' 超时！(10s)")
+                 raise # Re-raise timeout error
+            except Exception as exec_e:
+                logger.error(f"* 执行 'get_current_time' 失败: {exec_e}", exc_info=True)
+                # Don't re-raise, but mark test as failed
+                test_succeeded = False 
+        else:
+            logger.warning(f"* 未在列表中找到 'get_current_time' 工具，跳过执行测试")
+            # If listing worked but tool not found, test is still considered 'successful' in terms of connection
+            test_succeeded = True 
 
-            logger.info(f"* 断开 'time' 服务器连接...")
-            await server.disconnect()
-            logger.info("* 连接已断开")
-            logger.info(f"Time 服务器连接测试: 成功")
-            test_results["time_server_connection"] = True
-            time_server_succeeded = True
+        # 如果执行没有抛出异常（或者被跳过），标记为成功
+        if test_succeeded is None: # Check if not set to False by execute failure
+             test_succeeded = True
 
     except Exception as e:
-        logger.error(f"* Time 服务器测试失败: {e}", exc_info=True) # Log traceback
-        test_results["time_server_connection"] = False
-        # 确保标记为已测试，即使失败
-        if not time_server_tested and "time" in client.servers:
-            time_server_tested = True # Attempted connection but failed immediately
-
+        logger.error(f"* Time 服务器测试过程中失败: {e}", exc_info=False) # Don't log full traceback for expected errors like timeout
+        test_succeeded = False
+    
     finally:
-        # 确保即使测试失败也尝试清理资源
-        if time_server_tested and "time" in client.servers:
+        # 确保断开连接
+        if server and server._connected: # Check if connection was established
+            logger.info(f"* (Finally) 尝试断开 'time' 服务器连接...")
             try:
-                logger.info(f"* (Finally) 尝试断开 'time' 服务器连接...")
-                await client.servers["time"].disconnect()
-                logger.info(f"* (Finally) 'time' 连接（如果存在）已断开")
+                 async with asyncio.timeout(5): # 5秒断开超时
+                     await server.disconnect()
+                 logger.info(f"* (Finally) 'time' 连接已断开")
+            except asyncio.TimeoutError:
+                 logger.error("* (Finally) 断开 'time' 连接超时 (5s)")
             except Exception as disconn_e:
-                logger.error(f"* (Finally) 断开 'time' 时出错: {disconn_e}")
-        # Ensure the result reflects if the test was skipped or failed
-        if "time_server_connection" not in test_results:
-            test_results["time_server_connection"] = time_server_succeeded
+                 logger.error(f"* (Finally) 断开 'time' 时出错: {disconn_e}")
+        # 清理客户端资源
+        await client.disconnect_all() # Ensure client resources are cleaned up
+        logger.info("* (Finally) MCPClient 资源已清理")
 
+    # 更新全局测试结果
+    if test_attempted:
+        test_results["time_server_connection"] = test_succeeded
+        result_str = "成功" if test_succeeded else "失败"
+        logger.info(f"Time 服务器连接测试: {result_str}")
+    # Return status
+    return test_succeeded
 
 async def main():
     """主测试函数"""
@@ -429,8 +440,6 @@ async def main():
         print(result_msg)
         logger.info(result_msg)
         
-        # 新增：测试 time 服务器连接
-        await test_time_server()
         
         # 总结（服务器测试不影响总体成功）
         success = config_ok and client_ok and config_test_ok
@@ -445,6 +454,14 @@ async def main():
         logger.info(result_msg)
         
         logger.info("基础测试完成")
+        
+        # --- 调用 time 服务器测试 --- 
+        logger.info("运行 Time 服务器测试...") # Add log statement
+        time_ok = await test_time_server()
+        # The test_results["time_server_connection"] is updated inside test_time_server now
+        
+        # --- 可以选择性地运行 everything 测试 --- 
+        # logger.info("运行 Everything 服务器测试 (可能需要 npx 安装)...")
         
         return success
         

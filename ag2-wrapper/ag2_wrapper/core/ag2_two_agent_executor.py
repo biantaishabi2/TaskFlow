@@ -36,7 +36,7 @@ import os
 import logging
 import asyncio
 import concurrent.futures
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Callable
 from task_planner.core.context_management import TaskContext
 from .ag2tools import AG2ToolManager
 from .tool_utils import ToolLoader, ToolError
@@ -48,6 +48,9 @@ from ..core.config import create_openrouter_config
 import platform
 from datetime import datetime
 from ..agent_tools.BashTool.prompt import PROMPT as BASH_PROMPT
+import functools
+from ..agent_tools.MCPTool import MCPTool
+from ..core.base_tool import BaseTool
 
 logger = logging.getLogger(__name__)
 
@@ -226,7 +229,8 @@ class AG2TwoAgentExecutor:
                  tool_manager: AG2ToolManager = None,
                  context_manager = None,
                  task_context: str = "",
-                 use_human_input: bool = False):
+                 use_human_input: bool = False,
+                 mcp_tool: Optional[MCPTool] = None):
         """初始化双代理执行器
         
         Args:
@@ -237,9 +241,11 @@ class AG2TwoAgentExecutor:
             use_human_input: 是否使用标准UserProxyAgent而不是LLMDrivenUserProxy
                             设置为True时将使用标准的UserProxyAgent与真人交互
                             设置为False时使用LLMDrivenUserProxy自动处理工具调用
+            mcp_tool: MCPTool实例（可选，用于MCP工具集成）
         """
         self.config = config or ConfigManager()
         self.tool_manager = tool_manager or AG2ToolManager()
+        self.mcp_tool = mcp_tool
         
         # 初始化上下文管理器
         if context_manager:
@@ -294,20 +300,23 @@ class AG2TwoAgentExecutor:
                     code_execution_config={
                         "work_dir": ".",  # 设置工作目录为当前目录
                         "use_docker": False  # 不使用docker执行
-                    }
+                    },
+                    llm_config=self.llm_config
                 )
                 logging.info("使用标准UserProxyAgent，启用代码执行")
             except ImportError as e:
                 logging.error(f"无法导入UserProxyAgent: {str(e)}，回退到LLMDrivenUserProxy")
                 self.executor = LLMDrivenUserProxy(
                     name="用户代理", 
-                    human_input_mode="ALWAYS"
+                    human_input_mode="ALWAYS",
+                    llm_config=self.llm_config
                 )
         else:
             # 使用LLMDrivenUserProxy进行自动化对话
             self.executor = LLMDrivenUserProxy(
                 name="用户代理",
-                human_input_mode="ALWAYS"
+                human_input_mode="ALWAYS",
+                llm_config=self.llm_config
             )
             logging.info("使用LLMDrivenUserProxy，自动处理工具调用")
         
@@ -317,7 +326,7 @@ class AG2TwoAgentExecutor:
             ENV_INFO=self._build_env_info(),
             CONTEXT_INFO=await self._build_context_info(),
             task_context=self.task_context,  
-            TOOLS_SECTION=self._build_tools_prompt([]),  # 初始为空，后续更新
+            TOOLS_SECTION=self._build_tools_prompt(),  # 初始为空，后续更新
             BASH_PROMPT=BASH_PROMPT
         )
         
@@ -328,7 +337,36 @@ class AG2TwoAgentExecutor:
             llm_config=self.llm_config
         )
         
-        # 初始化工具
+        # --- MCPTool Internal Initialization ---
+        logging.info("MCPTool instance not provided externally, attempting internal initialization...")
+        try:
+            # Import MCPClient/MCPTool and config functions here
+            from ag2_wrapper.agent_tools.MCPTool import MCPClient, MCPTool
+            from ag2_wrapper.agent_tools.MCPTool.config import list_servers
+            
+            # Check if any servers are configured via MCP's standard config mechanism
+            available_servers = list_servers()
+            
+            if available_servers:
+                logging.info(f"Found MCP server configurations via MCP config system: {list(available_servers.keys())}")
+                
+                # MCPClient constructor will use list_servers() internally to load configs
+                logging.debug("Creating and initializing internal MCPClient (will load from MCP configs)...")
+                mcp_client = MCPClient()
+                await mcp_client.initialize() # Initialize connections based on loaded configs
+                self.mcp_tool = MCPTool(mcp_client) # Assign to self.mcp_tool
+                logging.info("Internal MCPTool initialized successfully using MCP config system.")
+                
+            else:
+                logging.warning("Internal MCPTool initialization skipped: No servers found via MCP config system (e.g., in ./.mcp/config.json).")
+        
+        except ImportError as e_import:
+             logging.error(f"Internal MCPTool initialization failed: Could not import MCPTool or MCPClient. {e_import}", exc_info=True)
+        except Exception as e_init:
+             logging.error(f"Internal MCPTool initialization failed: {e_init}", exc_info=True)
+        # --- End MCPTool Internal Initialization ---
+
+        # 初始化工具 (Now uses either externally provided or internally initialized self.mcp_tool)
         await self._initialize_tools()
         
         # 获取已加载的工具列表并更新系统提示词
@@ -338,7 +376,7 @@ class AG2TwoAgentExecutor:
             ENV_INFO=self._build_env_info(),
             CONTEXT_INFO=await self._build_context_info(),
             task_context=self.task_context,  
-            TOOLS_SECTION=self._build_tools_prompt(tools),
+            TOOLS_SECTION=self._build_tools_prompt(),
             BASH_PROMPT=BASH_PROMPT
         )
         
@@ -351,7 +389,8 @@ class AG2TwoAgentExecutor:
                     tool_manager: AG2ToolManager = None,
                     context_manager = None,
                     task_context: str = "",
-                    use_human_input: bool = False) -> 'AG2TwoAgentExecutor':
+                    use_human_input: bool = False,
+                    mcp_tool: Optional[MCPTool] = None) -> 'AG2TwoAgentExecutor':
         """创建并初始化执行器的工厂方法
         
         Args:
@@ -361,10 +400,11 @@ class AG2TwoAgentExecutor:
             task_context: 任务上下文
             use_human_input: 是否使用标准UserProxyAgent与真人交互
                             默认为False，使用LLMDrivenUserProxy
+            mcp_tool: MCPTool实例（可选）
         Returns:
             初始化后的AG2TwoAgentExecutor实例
         """
-        executor = cls(config, tool_manager, context_manager, task_context, use_human_input)
+        executor = cls(config, tool_manager, context_manager, task_context, use_human_input, mcp_tool)
         await executor.initialize()
         return executor
 
@@ -392,125 +432,276 @@ class AG2TwoAgentExecutor:
         """析构函数"""
         pass
         
-    def _build_tools_prompt(self, tools_list):
-        """构建工具部分的提示词
-        
-        Args:
-            tools_list: 工具列表，每个元素是(工具类, 提示词)对
-            
-        Returns:
-            str: 工具部分提示词
-        """
+    def _build_tools_prompt(self) -> str:
+        """构建工具部分的提示词 (重构后，使用 self._registered_tools_info)"""
         tools_section = []
         
-        for tool_class, prompt in tools_list:
-            # --- 跳过 BashTool 的描述 ---
-            if tool_class.__name__ == "BashTool":
+        # 迭代内部存储的所有工具信息
+        if not hasattr(self, '_registered_tools_info') or not self._registered_tools_info:
+             return "此代理没有配置任何可用工具。"
+
+        for tool_info in self._registered_tools_info:
+            tool_name = tool_info.get("name", "Unknown Tool")
+            description = tool_info.get("description", "No description available.")
+            parameters = tool_info.get("parameters", {}) # AG2 JSON Schema
+            prompt_details = tool_info.get("prompt_details", "") # 特定工具提示
+
+            # 跳过 BashTool (或类似工具) 的显式描述，因为它有单独的处理方式
+            if "bash" in tool_name.lower() or "shell" in tool_name.lower(): 
+                logging.debug(f"Skipping prompt generation in TOOLS_SECTION for tool: {tool_name}")
                 continue
-            # --- 跳过结束 ---
-            
-            tool = tool_class()
-            
-            # 构建参数描述
+
+            # 构建参数描述 (从 AG2 JSON Schema)
             params_desc = []
-            
-            if tool.parameters:
+            if isinstance(parameters, dict) and parameters.get("type") == "object" and "properties" in parameters:
                 params_desc.append("**参数**:")
-                for param_name, param_info in tool.parameters.items():
-                    required = "必需" if param_info.get("required", False) else "可选"
-                    param_type = param_info.get("type", "未知")
-                    desc = param_info.get("description", "")
-                    params_desc.append(f"- {param_name} ({param_type}, {required}): {desc}")
+                required_params = parameters.get("required", [])
+                for param_name, param_info_detail in parameters["properties"].items():
+                    required = "必需" if param_name in required_params else "可选"
+                    param_type = param_info_detail.get("type", "未知")
+                    desc = param_info_detail.get("description", "")
+                    enum_desc = ""
+                    if "enum" in param_info_detail:
+                        enum_desc = f" (可选值: {', '.join(map(str, param_info_detail['enum']))})"
+                    params_desc.append(f"- {param_name} ({param_type}, {required}): {desc}{enum_desc}")
             
             # 组装工具描述
-            tool_section = [
-                f"### {tool.name}",
-                f"{tool.description}",
+            tool_section_parts = [
+                f"### {tool_name}",
+                f"{description}",
                 "",
             ]
             
-            # 添加参数描述
             if params_desc:
-                tool_section.extend(params_desc)
-                tool_section.append("")
+                tool_section_parts.extend(params_desc)
+                tool_section_parts.append("")
             
-            # 添加工具提示词
-            tool_section.append(f"{prompt}")
-            tool_section.append("---")
+            # 添加特定工具提示 (如果 tool_info 中有)
+            if prompt_details:
+                tool_section_parts.append(prompt_details)
+            
+            tool_section_parts.append("---")
                 
-            tools_section.append("\n".join(tool_section))
+            tools_section.append("\n".join(tool_section_parts))
         
+        if not tools_section:
+            return "此代理没有配置任何显式描述的工具（可能只有Bash/Shell工具）。"
+            
         return "\n".join(tools_section)
 
     async def _initialize_tools(self):
-        """异步初始化工具"""
+        """异步初始化工具 (重构后，统一处理标准和 MCP 工具)"""
+        self._registered_tools_info: List[Dict[str, Any]] = [] # 用于存储所有工具信息
+        total_tools_initialized = 0
+        successfully_registered_names = [] # 用于记录成功注册到AutoGen的函数名
+
+        # --- 1. 初始化标准 AG2 工具 --- 
         try:
-            # 加载工具
-            tools = self.tool_loader.load_tools_sync()  # 这个方法可能也需要改成异步的
+            standard_tools = self.tool_loader.load_tools_sync() # 假设同步加载OK
+            logging.info(f"发现 {len(standard_tools)} 个标准 AG2 工具。")
             
-            # 初始化工具
-            for tool_class, prompt in tools:
+            for tool_class, prompt in standard_tools:
                 try:
-                    # --- 跳过 BashTool 的注册 ---
-                    if tool_class.__name__ == "BashTool":
-                        logging.debug(f"Skipping registration of BashTool to enforce code block usage.")
+                    # 跳过 BashTool (通常用代码块执行)
+                    if "bash" in tool_class.__name__.lower() or "shell" in tool_class.__name__.lower():
+                        logging.debug(f"Skipping standard BashTool registration: {tool_class.__name__}")
                         continue
-                    # --- 跳过结束 ---
                     
-                    # 创建工具实例
                     tool_instance = tool_class()
-                    
-                    # 设置上下文
                     context = {
                         "read_timestamps": self.read_timestamps,
                         "normalize_path": self.normalize_path
                     }
                     
-                    # 注册到工具管理器
-                    self.tool_manager.register_tool(
-                        tool_class=tool_class,
-                        prompt=prompt,
-                        context=context
-                    )
+                    # 注册到 AG2ToolManager (如果需要外部访问)
+                    # self.tool_manager.register_tool(
+                    #     tool_class=tool_class,
+                    #     prompt=prompt,
+                    #     context=context
+                    # )
                     
-                    # 创建工具包装函数 - 使用工厂函数避免闭包问题
-                    def create_tool_wrapper(tool):
-                        from typing import Any, Dict
-                        
-                        async def wrapper(*, params: Dict[str, Any]) -> Any:
-                            """执行工具操作的包装函数"""
-                            try:
-                                return await tool.execute(params=params)
-                            except Exception as e:
-                                logger.error(f"工具 {tool.name} 执行失败: {str(e)}")
-                                raise
-                        
-                        # 设置函数属性
-                        wrapper.__name__ = f"{tool.name}_wrapper"
-                        wrapper.__doc__ = tool.description
-                        
-                        return wrapper
-                    
-                    # 注册到 AutoGen
-                    register_function(
-                        create_tool_wrapper(tool_instance),
-                        name=tool_instance.name,
-                        caller=self.assistant,
-                        executor=self.executor,
-                        description=f"{tool_instance.description}\n\n{prompt}"
-                    )
-                    
-                    logging.debug(f"成功注册工具: {tool_instance.name}")
+                    # 存储信息，用于构建提示词和注册AutoGen函数
+                    tool_info = {
+                        "name": tool_instance.name,
+                        "description": tool_instance.description,
+                        "parameters": tool_instance.parameters, # AG2 格式 JSON Schema
+                        "prompt_details": prompt,
+                        "instance": tool_instance, # 保留实例用于包装器
+                        "is_mcp": False
+                    }
+                    self._registered_tools_info.append(tool_info)
+                    logging.debug(f"成功准备标准工具信息: {tool_instance.name}")
+                    total_tools_initialized += 1
                     
                 except Exception as e:
-                    logging.error(f"注册工具 {tool_class.__name__} 失败: {str(e)}")
+                    logging.error(f"初始化标准工具 {tool_class.__name__} 失败: {str(e)}", exc_info=True)
                     continue
-            
-            logging.info(f"成功初始化 {len(tools)} 个工具")
+            logging.info(f"成功准备 {total_tools_initialized} 个标准工具的信息。")
             
         except Exception as e:
-            logging.error(f"工具初始化失败: {str(e)}")
-            raise
+            logging.error(f"加载标准工具失败: {str(e)}", exc_info=True)
+
+        # --- 2. 初始化 MCP 工具 --- 
+        if self.mcp_tool:
+            mcp_tools_initialized = 0
+            try:
+                logging.info("开始初始化 MCP 工具...")
+                # 从 MCPTool 获取 AG2 格式的工具列表
+                ag2_mcp_tools = await self.mcp_tool.get_tools() 
+                logging.info(f"从 MCPTool 获取了 {len(ag2_mcp_tools)} 个工具定义。")
+
+                for tool_info in ag2_mcp_tools:
+                    try:
+                        mcp_tool_name = tool_info.get("name")
+                        if not mcp_tool_name:
+                            logging.warning("发现一个没有名称的 MCP 工具，已跳过。")
+                            continue
+
+                        logging.debug(f"准备 MCP 工具信息: {mcp_tool_name}")
+                        
+                        # 存储信息
+                        self._registered_tools_info.append({
+                            "name": mcp_tool_name,
+                            "description": tool_info.get("description", ""),
+                            "parameters": tool_info.get("parameters", {}), # 应该是 AG2 格式
+                            "prompt_details": "", # 可以添加特定提示
+                            "instance": None, # 不需要单独实例
+                            "is_mcp": True,
+                            "mcp_tool_ref": self.mcp_tool # 引用主 MCPTool 实例
+                        })
+                        mcp_tools_initialized += 1
+                        logging.debug(f"成功准备 MCP 工具信息: {mcp_tool_name}")
+
+                    except Exception as e:
+                        mcp_tool_name_err = tool_info.get('name', '未知名称')
+                        logging.error(f"处理 MCP 工具 {mcp_tool_name_err} 失败: {str(e)}", exc_info=True)
+                        continue
+                
+                logging.info(f"成功准备 {mcp_tools_initialized} 个 MCP 工具的信息。")
+                total_tools_initialized += mcp_tools_initialized
+
+            except Exception as e:
+                logging.error(f"获取或处理 MCP 工具列表失败: {str(e)}", exc_info=True)
+        else:
+            logging.info("未提供 MCPTool 实例，跳过 MCP 工具初始化。")
+
+        logging.info(f"总共准备了 {total_tools_initialized} 个工具的信息，准备注册到 AutoGen...")
+
+        # --- 3. 统一注册所有工具到 AutoGen --- 
+        registered_count = 0
+        if not self.assistant or not self.executor:
+             logging.error("AutoGen Assistant or Executor 未初始化，无法注册函数。")
+             return # Or raise an error
+
+        for tool_info in self._registered_tools_info:
+            tool_name = tool_info["name"]
+            description = tool_info["description"]
+            parameters = tool_info["parameters"] # AG2 JSON Schema
+            prompt_details = tool_info.get("prompt_details", "")
+            is_mcp = tool_info["is_mcp"]
+
+            # 构建 AutoGen 需要的函数描述 (合并 description, 参数, prompt_details)
+            params_desc_list = []
+            if isinstance(parameters, dict) and parameters.get("type") == "object" and "properties" in parameters:
+                required_params = parameters.get("required", [])
+                for param_name, param_info_detail in parameters["properties"].items():
+                    required = "必需" if param_name in required_params else "可选"
+                    param_type = param_info_detail.get("type", "未知")
+                    desc = param_info_detail.get("description", "")
+                    enum_desc = ""
+                    if "enum" in param_info_detail:
+                        enum_desc = f" (可选值: {', '.join(map(str, param_info_detail['enum']))})"
+                    params_desc_list.append(f"- {param_name} ({param_type}, {required}): {desc}{enum_desc}")
+            params_section = ""            
+            if params_desc_list:
+                 params_section = "\\n**参数**:\\n" + "\\n".join(params_desc_list)
+            # 完整描述，包含参数信息和特定提示
+            full_description = f"{description}{params_section}\\n\\n{prompt_details}".strip()
+
+            registration_successful = False 
+            try:
+                if is_mcp:
+                    # --- MCP 工具包装器 --- 
+                    mcp_tool_instance = tool_info["mcp_tool_ref"]
+                    # 使用闭包捕获工具名和 MCPTool 实例
+                    async def mcp_executor_func(
+                        captured_tool_name: Optional[str] = tool_name, 
+                        mcp_tool_ref = mcp_tool_instance,
+                        **kwargs: Any
+                    ):
+                        # 尝试处理嵌套参数问题 (AutoGen 有时会把参数包在 'params' 或 'kwargs' 里)
+                        actual_params = kwargs
+                        if len(kwargs) == 1:
+                            first_key = next(iter(kwargs))
+                            if first_key in ['params', 'kwargs'] and isinstance(kwargs[first_key], dict):
+                                logging.warning(f"Detected nested '{first_key}' in MCP args... Extracting inner dict.")
+                                actual_params = kwargs[first_key]
+                        
+                        logger.debug(f"Executing MCP tool '{captured_tool_name}' with params: {actual_params}")
+                        try:
+                             # 调用 MCPTool 的 execute 方法
+                             return await mcp_tool_ref.execute(captured_tool_name, actual_params)
+                        except Exception as e_exec:
+                             logger.error(f"Error executing MCP tool {captured_tool_name}: {e_exec}", exc_info=True)
+                             return {"error": True, "message": f"Failed to execute {captured_tool_name}: {str(e_exec)}"}
+                    
+                    # 设置函数元信息
+                    mcp_executor_func.__name__ = tool_name
+                    mcp_executor_func.__doc__ = full_description
+                    target_func = mcp_executor_func
+                
+                else:
+                    # --- 标准 AG2 工具包装器 --- 
+                    tool_instance = tool_info["instance"]
+                    if not tool_instance:
+                        logging.warning(f"Skipping registration for standard tool {tool_name} due to missing instance.")
+                        continue
+                    # 使用闭包捕获工具实例
+                    async def standard_executor_func(
+                        tool_inst = tool_instance,
+                        **kwargs: Any
+                    ):
+                        # 同样处理嵌套参数
+                        params_to_pass = kwargs
+                        if len(kwargs) == 1:
+                             first_key = next(iter(kwargs))
+                             if first_key in ['params', 'kwargs'] and isinstance(kwargs[first_key], dict):
+                                  logging.warning(f"Detected nested '{first_key}' for standard tool... Using inner dict.")
+                                  params_to_pass = kwargs[first_key]
+                        
+                        logger.debug(f"Executing standard tool '{tool_inst.name}' with params dict: {params_to_pass}")
+                        try:
+                             # 调用标准工具的 execute 方法
+                             return await tool_inst.execute(params=params_to_pass)
+                        except Exception as e_exec:
+                             logger.error(f"Error executing standard tool {tool_inst.name}: {e_exec}", exc_info=True)
+                             return {"error": True, "message": f"Failed to execute {tool_inst.name}: {str(e_exec)}"}
+
+                    # 设置函数元信息
+                    standard_executor_func.__name__ = tool_name
+                    standard_executor_func.__doc__ = full_description
+                    target_func = standard_executor_func
+
+                # --- 注册到 AutoGen --- 
+                register_function(
+                     target_func, 
+                     caller=self.assistant, # Assistant Agent 发起调用
+                     executor=self.executor, # UserProxyAgent (或 LLMDrivenUserProxy) 执行
+                     name=tool_name, # 函数名，LLM 需要匹配这个名字
+                     description=full_description # 描述，给LLM看，包含参数等信息
+                )
+                registration_successful = True 
+
+                if registration_successful:
+                    logging.debug(f"成功注册 AutoGen 函数: {tool_name}")
+                    registered_count += 1
+                    successfully_registered_names.append(tool_name)
+
+            except Exception as e:
+                 logging.error(f"注册 AutoGen 函数 {tool_name} 失败: {str(e)}", exc_info=True)
+        
+        logging.info(f"总共成功注册 {registered_count} 个函数到 AutoGen。")
+        logging.info(f"成功注册的函数名称: {successfully_registered_names}")
 
     def _safe_get_message_attribute(self, message: Any, attr_name: str, default_value: Any = "") -> Any:
         """安全获取消息的属性或键值

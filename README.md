@@ -610,3 +610,57 @@ execution:
     parallel_tasks: 3
     retry_attempts: 2
 ```
+## MCPTool 集成与服务器配置
+
+`AG2TwoAgentExecutor` 现在支持自动初始化和加载 `MCPTool` 提供的工具。要启用此功能，您无需在创建 `AG2TwoAgentExecutor` 时手动传入 `mcp_tool` 实例，但需要正确配置 MCP 服务器。
+
+自动初始化依赖 `MCPTool` 自带的多层级配置加载机制。它会按以下优先级和路径查找配置文件：
+
+1.  **项目级配置 (最高优先级)**: `{项目根目录}/.mcp/config.json`
+2.  **用户级 mcprc 文件**: `~/.mcprc` (通常用于环境变量或简单设置，可能不直接支持复杂的服务器定义)
+3.  **全局用户级配置 (最低优先级)**: `~/.mcp/config.json`
+
+`AG2TwoAgentExecutor` 会使用找到的第一个包含服务器配置的文件。
+
+### 配置文件示例 (`config.json`)
+
+在上述任一 `config.json` 文件中，你需要定义 `mcp_servers` 字段，其结构如下：
+
+```json
+{
+  "mcp_servers": {
+    "your_server_name_1": {
+      "type": "stdio",
+      "command": "python",
+      "args": [
+        "-m",
+        "your_mcp_server_module_1"
+      ],
+      "env": {
+        "ANY_ENV_VAR": "VALUE"
+      }
+    },
+    "your_server_name_2": {
+      "type": "sse",
+      "url": "http://localhost:8000/events",
+      "env": {}
+    }
+    // ... 可以添加更多服务器
+  }
+  // ... 其他可能的 MCPTool 配置
+}
+```
+
+**关键字段说明:**
+
+*   `mcp_servers`: 包含所有服务器配置的顶层对象。
+*   `your_server_name_1`: 你为服务器指定的唯一名称。
+*   `type`: 服务器类型，目前支持 `"stdio"` (通过标准输入输出与子进程通信) 和 `"sse"` (通过 Server-Sent Events 连接)。
+*   `command` (仅限 `stdio`): 启动服务器进程的主命令 (例如: `"python"`, `"node"`).
+*   `args` (仅限 `stdio`): 传递给 `command` 的参数列表 (例如: `["-m", "your_mcp_server_module"]`).
+*   `env` (可选): 为服务器进程设置的环境变量。
+*   `url` (仅限 `sse`): SSE 服务器的事件流 URL。
+
+确保配置文件中的 `command` 和 `args` 对于你的环境是有效的，并且相应的 MCP 服务器模块 (`your_mcp_server_module`) 已安装或可访问。
+
+配置完成后，当你创建 `AG2TwoAgentExecutor` 实例且不传递 `mcp_tool` 参数时，它将自动尝试根据这些配置文件初始化 MCP 工具。
