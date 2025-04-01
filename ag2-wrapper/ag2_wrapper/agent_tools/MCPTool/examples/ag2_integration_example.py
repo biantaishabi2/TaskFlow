@@ -17,6 +17,7 @@ from pathlib import Path
 # Set global logging level to WARNING to reduce verbosity
 logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger("ag2_mcp_integration") # Define the logger instance
+logging.getLogger("autogen.tools.function_utils").setLevel(logging.ERROR) # Suppress warnings from this specific logger
 
 # Add project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
