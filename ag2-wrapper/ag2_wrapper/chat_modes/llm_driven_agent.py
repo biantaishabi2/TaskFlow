@@ -10,6 +10,9 @@ import sys
 from typing import Dict, Any, Optional, List, Callable, Union, Literal
 from pathlib import Path
 from . import content_tool_call_agent
+import inspect
+import json
+import asyncio
 
 
 # 添加项目根目录到Python路径
@@ -18,6 +21,7 @@ sys.path.append(str(project_root))
 
 try:
     import autogen
+    from autogen import ConversableAgent # 确保导入了 ConversableAgent
 except ImportError:
     raise ImportError(
         "未找到autogen包。请确保已正确安装:\n"
@@ -55,6 +59,34 @@ class LLMDrivenUserProxy(content_tool_call_agent.ContentToolCallAgent):
         # 调用父类初始化
         super().__init__(*args, **kwargs)
         
+        # --- 开始修改 V2: 使用 Wrapper 解决 TypeError ---
+        def _tool_reply_wrapper(recipient, messages=None, sender=None, config=None):
+            """包装函数，以正确的参数调用实例方法。"""
+            # 注意：AutoGen 调用 reply_func 时，第一个参数是 recipient (即 self)
+            # 所以这里的 recipient 就是 LLMDrivenUserProxy 实例本身
+            # 我们需要调用实例上的 generate_tool_calls_reply 方法
+            return recipient.generate_tool_calls_reply(messages=messages, sender=sender, config=config)
+
+        # 手动替换原始的工具调用回复函数为我们覆盖的版本
+        original_tool_reply_func_name = "generate_tool_calls_reply"
+        found_and_replaced = False
+        for i, func_dict in enumerate(self._reply_func_list):
+            # 检查函数名是否匹配我们要替换的那个
+            # 我们只替换同步版本 (generate_tool_calls_reply)，不替换异步版本 (a_generate_tool_calls_reply)
+            if hasattr(func_dict['reply_func'], '__name__') and \
+               func_dict['reply_func'].__name__ == original_tool_reply_func_name and \
+               not inspect.iscoroutinefunction(func_dict['reply_func']): # 确保是同步版本
+
+                # 替换为包装函数
+                self._reply_func_list[i]['reply_func'] = _tool_reply_wrapper
+                logger.info(f"成功将原始 '{original_tool_reply_func_name}' 替换为 _reply_func_list 中的包装器版本。")
+                found_and_replaced = True
+                # break # 暂时不 break
+
+        if not found_and_replaced:
+            logger.warning(f"无法在 _reply_func_list 中找到原始的 '{original_tool_reply_func_name}' 进行替换。工具调用可能仍会使用原始逻辑。")
+        # --- 结束修改 V2 ---
+
         # 创建默认响应代理
         self.response_agent = LLMResponseAgent()
         
@@ -130,3 +162,123 @@ class LLMDrivenUserProxy(content_tool_call_agent.ContentToolCallAgent):
         except Exception as e:
             logger.error("验证工具时出错: %s", str(e))
             return False
+
+    def generate_tool_calls_reply(
+        self,
+        messages: Optional[list[dict[str, Any]]] = None,
+        sender: Optional["Agent"] = None, # Use "Agent" in quotes for forward reference if needed
+        config: Optional[Any] = None,
+    ) -> tuple[bool, Optional[dict[str, Any]]]:
+        """Generate a reply using tool call.
+        OVERRIDE: Correctly handles async tool functions by using run_coroutine_threadsafe.
+        """
+        if config is None:
+            config = self
+        if messages is None:
+            # Ensure we access messages correctly if sender context matters
+            # Get messages from the perspective of the recipient (self)
+            messages = self._oai_messages.get(sender) if sender else list(self._oai_messages.values())[0] # Simplistic fallback
+            if not messages:
+                messages = [] # Ensure it's a list
+
+        if not messages: # Handle case where no messages are found
+             logger.warning("generate_tool_calls_reply received no messages after checking sender context.")
+             return False, None
+
+        message = messages[-1]
+        tool_returns = []
+
+        if not isinstance(message, dict):
+            logger.error(f"Last message is not a dictionary: {type(message)}")
+            return False, None # Cannot process if message format is wrong
+
+        tool_calls = message.get("tool_calls", [])
+        if not isinstance(tool_calls, list):
+            logger.error(f"tool_calls is not a list: {type(tool_calls)}")
+            return False, None # Cannot process if tool_calls format is wrong
+
+        # --- Loop through tool calls --- 
+        for tool_call in tool_calls:
+            if not isinstance(tool_call, dict):
+                logger.warning(f"Skipping invalid tool_call item (not a dict): {tool_call}")
+                continue
+
+            function_call = tool_call.get("function")
+            if not isinstance(function_call, dict):
+                 logger.warning(f"Skipping invalid function_call (not a dict): {function_call}")
+                 continue
+
+            tool_call_id = tool_call.get("id")
+            func_name = function_call.get("name")
+            if func_name is None:
+                logger.warning(f"Skipping tool call with no function name: {function_call}")
+                continue
+
+            func = self._function_map.get(func_name, None)
+            if func is None:
+                 logger.error(f"Function {func_name} not found in function map.")
+                 content = f"Error: Function '{func_name}' not registered."
+                 is_error = True
+            else:
+                # --- Execute the function --- 
+                try:
+                    # ****** Use run_coroutine_threadsafe for async functions ******
+                    if inspect.iscoroutinefunction(func):
+                        logger.warning(f"Attempting to run async tool '{func_name}' from sync generate_tool_calls_reply via run_coroutine_threadsafe.")
+                        try:
+                             # Get the running loop. This should exist as we are inside generate_reply -> generate_tool_calls_reply
+                             loop = asyncio.get_running_loop() 
+                             # We execute a_execute_function, which handles argument parsing and calling the actual tool func
+                             future = asyncio.run_coroutine_threadsafe(
+                                 self.a_execute_function(function_call, call_id=tool_call_id), loop
+                             )
+                             # Wait for the result with a timeout
+                             _, func_return = future.result(timeout=60) # Adjust timeout as needed
+                             logger.info(f"Async tool '{func_name}' execution via threadsafe completed.")
+                        except RuntimeError as loop_err:
+                             logger.error(f"Could not get running loop for async tool '{func_name}': {loop_err}")
+                             func_return = {"content": f"Error: Could not get event loop for '{func_name}'.", "is_error": True}
+                        except asyncio.TimeoutError:
+                             logger.error(f"Async tool '{func_name}' execution timed out via threadsafe.")
+                             func_return = {"content": f"Error: Tool execution for '{func_name}' timed out.", "is_error": True}
+                        except Exception as async_exec_err:
+                             logger.error(f"Error running async tool '{func_name}' via threadsafe: {async_exec_err}", exc_info=True)
+                             func_return = {"content": f"Error executing async tool '{func_name}': {async_exec_err}", "is_error": True}
+
+                    else:
+                        # If it's sync, call it directly using execute_function
+                        logger.info(f"Executing synchronous tool '{func_name}'...")
+                        _, func_return = self.execute_function(function_call, call_id=tool_call_id)
+                        logger.info(f"Synchronous tool '{func_name}' execution completed.")
+
+                    # Extract content and error status from func_return dict
+                    content = func_return.get("content", "")
+                    if content is None: content = "" # Ensure content is a string
+                    is_error = func_return.get("is_error", False)
+
+                except Exception as e:
+                    content = f"Error during function execution logic for {func_name}: {e}"
+                    logger.error(content, exc_info=True)
+                    is_error = True
+
+            # --- Format the tool response --- 
+            tool_response = {
+                "role": "tool",
+                "content": str(content), # Ensure content is string
+                # "is_error": is_error # Optionally include
+            }
+            if tool_call_id is not None:
+                tool_response["tool_call_id"] = tool_call_id
+
+            tool_returns.append(tool_response)
+
+        # --- Return the final tool message --- 
+        if tool_returns:
+            combined_content = "\n\n".join([self._str_for_tool_response(tr) for tr in tool_returns])
+            return True, {
+                "role": "tool",
+                "tool_responses": tool_returns,
+                "content": combined_content,
+            }
+
+        return False, None

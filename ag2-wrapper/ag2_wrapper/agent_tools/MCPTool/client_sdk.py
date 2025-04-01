@@ -205,14 +205,27 @@ class MCPServer:
             
             # 关闭退出栈
             try:
-                await self._exit_stack.aclose()
-                logger.info(f"服务器 {self.name} 资源已清理")
+                logger.debug(f"服务器 {self.name}: 尝试优雅关闭 (aclose) 退出栈 (超时 5 秒)，这会等待进程退出...")
+                await asyncio.wait_for(self._exit_stack.aclose(), timeout=5.0)
+                logger.info(f"服务器 {self.name} 资源已通过 aclose 优雅清理")
+            except asyncio.TimeoutError:
+                logger.warning(f"服务器 {self.name}: 等待服务器进程退出超时 (5s)。进程可能仍在运行。")
+                # ---- 强制终止逻辑 (理想情况，但当前无法实现) ----
+                # TODO: 需要获取进程对象 self._process 并调用 kill() 
+                # if self._process and self._process.returncode is None:
+                #     logger.warning(f"服务器 {self.name}: 强制终止未退出的进程...")
+                #     self._process.kill()
+                # else:
+                #     logger.error(f"服务器 {self.name}: 无法执行强制终止，进程对象不可用或已退出。")
+                logger.error(f"服务器 {self.name}: 由于无法获取进程对象，无法执行强制终止。进程可能仍在后台运行。")
             except Exception as e:
-                logger.error(f"清理 {self.name} 资源出错: {str(e)}")
-            
-            # 创建新的退出栈
-            self._exit_stack = AsyncExitStack()
-            logger.info(f"服务器 {self.name} 断开连接完成")
+                # 捕获 aclose 可能引发的其他错误
+                logger.error(f"清理 {self.name} 资源 (aclose) 时发生意外错误: {str(e)}")
+            finally:
+                # 无论是否超时或出错，都重置 exit_stack
+                self._exit_stack = AsyncExitStack() # 创建新的退出栈
+                # self._process = None # 如果能获取到进程对象，在这里清理引用
+                logger.info(f"服务器 {self.name} 断开连接逻辑完成 (exit_stack 已重置)")
     
     async def call(self, method: str, params: Optional[Dict[str, Any]] = None) -> Any:
         """调用服务器方法

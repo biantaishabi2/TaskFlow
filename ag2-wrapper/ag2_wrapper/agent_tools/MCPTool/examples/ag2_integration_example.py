@@ -12,6 +12,7 @@ import os
 import sys
 import json
 from typing import Optional, Dict, Any, List
+from pathlib import Path
 
 # 设置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -137,54 +138,40 @@ async def demo_create_executor():
         return None
 
 
-def main_sync():
-    """同步主函数，处理事件循环"""
-    logger.info("=== AG2 Executor 与 MCPTool 集成示例 (重构后) ===")
-    
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    executor = None 
+async def main():
+    """主异步执行流程"""
+    logger.info("=== AG2 Executor 与 MCPTool 集成示例 (异步模式) ===")
+    executor = None
     try:
         # 创建 executor (内部处理工具注册)
         logger.info("开始创建 Executor...")
-        executor = loop.run_until_complete(demo_create_executor())
+        executor = await demo_create_executor()
         
         if executor:
             logger.info("Executor 创建成功，准备执行任务查询...")
-            # 准备要发送给 Executor 的消息
-            message = """获取东京（日本）的当前时间。""" 
+            message = """获取东京（日本）的当前时间。"""
             logger.info(f"发送消息给 Executor: {message}")
             
             try:
-                # 使用 executor 执行
-                # WARNING: The execute method might block or conflict with event loops.
-                # Consider using initiate_chat in an async context or ensure execute is compatible.
-                logger.info("尝试调用 executor.execute()...")
-                # NOTE: This execute call might still have issues with blocking or event loops.
-                # Further testing/adjustment might be needed depending on the executor's behavior.
-                # Pass the message as the first positional argument (prompt)
-                result = executor.execute(message) 
-                logger.info(f"AG2 Executor 执行结果: {result}")
+                logger.info("尝试调用 executor.executor.a_initiate_chat()...")
+                chat_result = await executor.executor.a_initiate_chat(
+                    executor.assistant, 
+                    message=message
+                )
+                logger.info(f"AG2 Executor a_initiate_chat 完成.")
                 
-                # 简单检查结果
-                if result and isinstance(result, dict) and result.get("success"):
-                    logger.info("任务看起来成功了。")
-                    final_output = result.get("output", "无输出")
-                    logger.info(f"最终输出: {final_output}")
-                elif result and isinstance(result, dict):
-                     logger.warning(f"任务可能未成功或出错: 状态={result.get('task_status')}, 错误={result.get('error_msg', 'N/A')}")
+                # Print the chat history or summary
+                if hasattr(chat_result, 'summary'):
+                     logger.info(f"对话总结: {chat_result.summary}")
+                if hasattr(chat_result, 'chat_history'):
+                    logger.info("完整对话历史:")
+                    for msg in chat_result.chat_history:
+                        logger.info(f"  - {msg.get('role')}: {msg.get('content')[:200]}...")
                 else:
-                     logger.warning(f"任务执行返回了意外的结果类型: {type(result)}")
+                    logger.info(f"返回结果 (无历史记录): {chat_result}")
 
-            except RuntimeError as e:
-                if "Cannot run the event loop while another loop is running" in str(e) or \
-                   "This event loop is already running" in str(e):
-                    logger.error(f"事件循环冲突: {e}. `executor.execute` 可能不适合在 `run_until_complete` 内部直接调用。请考虑异步执行或使用 `initiate_chat`。")
-                else:
-                    logger.error(f"执行 executor.execute 时发生运行时错误: {e}", exc_info=True)
-            except Exception as e_exec:
-                 logger.error(f"执行 executor.execute 时发生未知错误: {e_exec}", exc_info=True)
+            except Exception as e_chat:
+                 logger.error(f"执行 initiate_chat 时发生错误: {e_chat}", exc_info=True)
 
         else:
              logger.error("未能成功创建 AG2 Executor 实例，无法执行任务。")
@@ -193,23 +180,11 @@ def main_sync():
         logger.error(f"主流程初始化或执行过程中出错: {e_main}", exc_info=True)
     
     finally:
-        # 确保即使 executor 创建失败也能尝试清理资源
         logger.info("开始清理 MCP 资源...")
-        loop.run_until_complete(cleanup_mcp_resources())
-        
-        # 关闭事件循环
-        logger.info("关闭事件循环...")
-        try:
-            if loop.is_running():
-                logger.warning("事件循环仍在运行，尝试停止...")
-                loop.stop()
-            loop.close()
-            logger.info("事件循环已关闭。")
-        except Exception as e_loop:
-            logger.error(f"关闭事件循环时出错: {e_loop}", exc_info=True)
+        await cleanup_mcp_resources()
         
     logger.info("=== 示例结束 ===")
 
 
 if __name__ == "__main__":
-    main_sync()
+    asyncio.run(main())
