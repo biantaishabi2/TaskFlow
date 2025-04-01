@@ -13,6 +13,7 @@ from . import content_tool_call_agent
 import inspect
 import json
 import asyncio
+import functools
 
 
 # 添加项目根目录到Python路径
@@ -21,13 +22,16 @@ sys.path.append(str(project_root))
 
 try:
     import autogen
-    from autogen import ConversableAgent # 确保导入了 ConversableAgent
+    from autogen import ConversableAgent, UserProxyAgent, Agent # 确保导入了 ConversableAgent
 except ImportError:
     raise ImportError(
         "未找到autogen包。请确保已正确安装:\n"
         "$ pip install pyautogen"
     )
 from ..agent_tools import LLMResponseAgent, ResponseType
+
+# Placeholder for the actual default system message
+DEFAULT_USER_PROXY_AGENT_SYSTEM_MESSAGE = "You are a helpful assistant." 
 
 logger = logging.getLogger(__name__)
 
@@ -40,57 +44,80 @@ class LLMDrivenUserProxy(content_tool_call_agent.ContentToolCallAgent):
     3. 验证消息结构
     """
     
-    def __init__(self, *args, **kwargs):
+    def __init__(
+        self,
+        name: str, # Explicitly define common params
+        llm_config: Union[Dict, Literal[False]],
+        code_execution_config: Union[Dict, Literal[False]] = False,
+        system_message: Optional[Union[str, List]] = DEFAULT_USER_PROXY_AGENT_SYSTEM_MESSAGE,
+        human_input_mode: str = "NEVER",
+        **kwargs, # Keep kwargs for flexibility
+    ):
         """初始化代理"""
-        # 设置代码执行配置
+        # Set up code executor
         from autogen.coding import LocalCommandLineCodeExecutor
-        
-        # 创建代码执行器，使用coding_workspace作为工作目录
-        executor = LocalCommandLineCodeExecutor(
-            timeout=500,
-            work_dir="."  # 使用当前目录作为工作目录
+        executor = LocalCommandLineCodeExecutor(timeout=500, work_dir=".")
+        # Prepare code_execution_config, handling the False case
+        effective_code_execution_config = {"executor": executor} if code_execution_config is not False else False
+
+        # Call parent init ONCE
+        super().__init__(
+            name=name,
+            system_message=system_message,
+            human_input_mode=human_input_mode,
+            code_execution_config=effective_code_execution_config, # Pass the prepared config
+            llm_config=llm_config, # Pass llm_config to parent
+            **kwargs, # Pass remaining kwargs
         )
         
-        # 添加代码执行配置
-        kwargs['code_execution_config'] = {
-            "executor": executor
-        }
+        # Initialize internal LLMResponseAgent for decision making
+        # Use the passed llm_config directly
+        self._llm_response_agent = LLMResponseAgent() if llm_config else None
         
-        # 调用父类初始化
-        super().__init__(*args, **kwargs)
+        # Commented out redundant response_agent initialization
+        # self.response_agent = LLMResponseAgent() 
         
-        # --- 开始修改 V2: 使用 Wrapper 解决 TypeError ---
-        def _tool_reply_wrapper(recipient, messages=None, sender=None, config=None):
-            """包装函数，以正确的参数调用实例方法。"""
-            # 注意：AutoGen 调用 reply_func 时，第一个参数是 recipient (即 self)
-            # 所以这里的 recipient 就是 LLMDrivenUserProxy 实例本身
-            # 我们需要调用实例上的 generate_tool_calls_reply 方法
-            return recipient.generate_tool_calls_reply(messages=messages, sender=sender, config=config)
+        logger.debug(f"Initializing LLMDrivenUserProxy '{name}'") # Changed log message slightly
 
-        # 手动替换原始的工具调用回复函数为我们覆盖的版本
-        original_tool_reply_func_name = "generate_tool_calls_reply"
-        found_and_replaced = False
-        for i, func_dict in enumerate(self._reply_func_list):
-            # 检查函数名是否匹配我们要替换的那个
-            # 我们只替换同步版本 (generate_tool_calls_reply)，不替换异步版本 (a_generate_tool_calls_reply)
-            if hasattr(func_dict['reply_func'], '__name__') and \
-               func_dict['reply_func'].__name__ == original_tool_reply_func_name and \
-               not inspect.iscoroutinefunction(func_dict['reply_func']): # 确保是同步版本
-
-                # 替换为包装函数
-                self._reply_func_list[i]['reply_func'] = _tool_reply_wrapper
-                logger.info(f"成功将原始 '{original_tool_reply_func_name}' 替换为 _reply_func_list 中的包装器版本。")
-                found_and_replaced = True
-                # break # 暂时不 break
-
-        if not found_and_replaced:
-            logger.warning(f"无法在 _reply_func_list 中找到原始的 '{original_tool_reply_func_name}' 进行替换。工具调用可能仍会使用原始逻辑。")
-        # --- 结束修改 V2 ---
-
-        # 创建默认响应代理
-        self.response_agent = LLMResponseAgent()
+        # --- 手动移除继承自父类的 check_termination_and_human_reply ---
+        # 查找需要移除的函数
+        func_to_remove = ConversableAgent.check_termination_and_human_reply
+        # 创建一个新的列表，只包含不需要移除的函数
+        new_reply_func_list = []
+        removed = False
+        for func_tuple in self._reply_func_list:
+            if func_tuple.get("reply_func") == func_to_remove:
+                removed = True
+                logger.debug(f"Removing inherited reply function: {getattr(func_to_remove, '__name__', 'unknown')}")
+            else:
+                new_reply_func_list.append(func_tuple)
         
-        logger.debug("LLMDrivenUserProxy initialized with %d tools", len(self.function_map))
+        # 替换旧列表
+        self._reply_func_list = new_reply_func_list
+        if not removed:
+             logger.warning("Could not find ConversableAgent.check_termination_and_human_reply in the initial reply function list.")
+        # --- 移除结束 ---
+
+        # 不再需要清空列表，因为我们已经手动移除了不需要的项
+        # self._reply_func_list = [] # Clear defaults 
+
+        # 1. Async tool call execution (highest priority)
+        self.register_reply(Agent, LLMDrivenUserProxy.a_generate_tool_calls_reply, position=1)
+        # 2. Sync code execution (less common in AG2 direct use) - Changed from async
+        self.register_reply(Agent, LLMDrivenUserProxy.generate_code_execution_reply, position=2) 
+        # 3. Async termination/response check (using LLM)
+        self.register_reply(Agent, LLMDrivenUserProxy.a_check_termination_and_human_reply, position=3)
+
+        # 4. Fallback termination check if no LLM config (for compatibility)
+        if not self._llm_response_agent:
+            self.register_reply(Agent, ConversableAgent.check_termination_and_human_reply, position=4)
+
+        # 5. Fallback LLM reply generation (should ideally not be triggered)
+        # self.register_reply(Agent, ConversableAgent.generate_llm_reply, position=5)
+
+        logger.debug(f"Registered reply functions for {name}")
+
+        logger.info("使用LLMDrivenUserProxy，自动处理工具调用")
 
     def get_human_input(self, prompt=""):
         """获取用户输入（由LLM自动判断）"""
@@ -122,7 +149,7 @@ class LLMDrivenUserProxy(content_tool_call_agent.ContentToolCallAgent):
                 chat_history.append(filtered_msg)
 
         # 将这个 *完整* 的 chat_history 传递给 response_agent
-        response = self.response_agent.get_response(chat_history)
+        response = self._llm_response_agent.get_response(chat_history)
         
         # 打印响应判断结果
         print(f"\n=== 响应判断结果 ===")
@@ -162,123 +189,3 @@ class LLMDrivenUserProxy(content_tool_call_agent.ContentToolCallAgent):
         except Exception as e:
             logger.error("验证工具时出错: %s", str(e))
             return False
-
-    def generate_tool_calls_reply(
-        self,
-        messages: Optional[list[dict[str, Any]]] = None,
-        sender: Optional["Agent"] = None, # Use "Agent" in quotes for forward reference if needed
-        config: Optional[Any] = None,
-    ) -> tuple[bool, Optional[dict[str, Any]]]:
-        """Generate a reply using tool call.
-        OVERRIDE: Correctly handles async tool functions by using run_coroutine_threadsafe.
-        """
-        if config is None:
-            config = self
-        if messages is None:
-            # Ensure we access messages correctly if sender context matters
-            # Get messages from the perspective of the recipient (self)
-            messages = self._oai_messages.get(sender) if sender else list(self._oai_messages.values())[0] # Simplistic fallback
-            if not messages:
-                messages = [] # Ensure it's a list
-
-        if not messages: # Handle case where no messages are found
-             logger.warning("generate_tool_calls_reply received no messages after checking sender context.")
-             return False, None
-
-        message = messages[-1]
-        tool_returns = []
-
-        if not isinstance(message, dict):
-            logger.error(f"Last message is not a dictionary: {type(message)}")
-            return False, None # Cannot process if message format is wrong
-
-        tool_calls = message.get("tool_calls", [])
-        if not isinstance(tool_calls, list):
-            logger.error(f"tool_calls is not a list: {type(tool_calls)}")
-            return False, None # Cannot process if tool_calls format is wrong
-
-        # --- Loop through tool calls --- 
-        for tool_call in tool_calls:
-            if not isinstance(tool_call, dict):
-                logger.warning(f"Skipping invalid tool_call item (not a dict): {tool_call}")
-                continue
-
-            function_call = tool_call.get("function")
-            if not isinstance(function_call, dict):
-                 logger.warning(f"Skipping invalid function_call (not a dict): {function_call}")
-                 continue
-
-            tool_call_id = tool_call.get("id")
-            func_name = function_call.get("name")
-            if func_name is None:
-                logger.warning(f"Skipping tool call with no function name: {function_call}")
-                continue
-
-            func = self._function_map.get(func_name, None)
-            if func is None:
-                 logger.error(f"Function {func_name} not found in function map.")
-                 content = f"Error: Function '{func_name}' not registered."
-                 is_error = True
-            else:
-                # --- Execute the function --- 
-                try:
-                    # ****** Use run_coroutine_threadsafe for async functions ******
-                    if inspect.iscoroutinefunction(func):
-                        logger.warning(f"Attempting to run async tool '{func_name}' from sync generate_tool_calls_reply via run_coroutine_threadsafe.")
-                        try:
-                             # Get the running loop. This should exist as we are inside generate_reply -> generate_tool_calls_reply
-                             loop = asyncio.get_running_loop() 
-                             # We execute a_execute_function, which handles argument parsing and calling the actual tool func
-                             future = asyncio.run_coroutine_threadsafe(
-                                 self.a_execute_function(function_call, call_id=tool_call_id), loop
-                             )
-                             # Wait for the result with a timeout
-                             _, func_return = future.result(timeout=60) # Adjust timeout as needed
-                             logger.info(f"Async tool '{func_name}' execution via threadsafe completed.")
-                        except RuntimeError as loop_err:
-                             logger.error(f"Could not get running loop for async tool '{func_name}': {loop_err}")
-                             func_return = {"content": f"Error: Could not get event loop for '{func_name}'.", "is_error": True}
-                        except asyncio.TimeoutError:
-                             logger.error(f"Async tool '{func_name}' execution timed out via threadsafe.")
-                             func_return = {"content": f"Error: Tool execution for '{func_name}' timed out.", "is_error": True}
-                        except Exception as async_exec_err:
-                             logger.error(f"Error running async tool '{func_name}' via threadsafe: {async_exec_err}", exc_info=True)
-                             func_return = {"content": f"Error executing async tool '{func_name}': {async_exec_err}", "is_error": True}
-
-                    else:
-                        # If it's sync, call it directly using execute_function
-                        logger.info(f"Executing synchronous tool '{func_name}'...")
-                        _, func_return = self.execute_function(function_call, call_id=tool_call_id)
-                        logger.info(f"Synchronous tool '{func_name}' execution completed.")
-
-                    # Extract content and error status from func_return dict
-                    content = func_return.get("content", "")
-                    if content is None: content = "" # Ensure content is a string
-                    is_error = func_return.get("is_error", False)
-
-                except Exception as e:
-                    content = f"Error during function execution logic for {func_name}: {e}"
-                    logger.error(content, exc_info=True)
-                    is_error = True
-
-            # --- Format the tool response --- 
-            tool_response = {
-                "role": "tool",
-                "content": str(content), # Ensure content is string
-                # "is_error": is_error # Optionally include
-            }
-            if tool_call_id is not None:
-                tool_response["tool_call_id"] = tool_call_id
-
-            tool_returns.append(tool_response)
-
-        # --- Return the final tool message --- 
-        if tool_returns:
-            combined_content = "\n\n".join([self._str_for_tool_response(tr) for tr in tool_returns])
-            return True, {
-                "role": "tool",
-                "tool_responses": tool_returns,
-                "content": combined_content,
-            }
-
-        return False, None

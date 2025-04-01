@@ -14,11 +14,11 @@ import json
 from typing import Optional, Dict, Any, List
 from pathlib import Path
 
-# 设置日志
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger("ag2_mcp_integration")
+# Set global logging level to WARNING to reduce verbosity
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger("ag2_mcp_integration") # Define the logger instance
 
-# 确保能导入需要的模块
+# Add project root to Python path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 
 # 导入所需模块

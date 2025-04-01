@@ -36,7 +36,7 @@ import os
 import logging
 import asyncio
 import concurrent.futures
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Callable
 from task_planner.core.context_management import TaskContext
 from .ag2tools import AG2ToolManager
 from .tool_utils import ToolLoader, ToolError
@@ -300,20 +300,23 @@ class AG2TwoAgentExecutor:
                     code_execution_config={
                         "work_dir": ".",  # 设置工作目录为当前目录
                         "use_docker": False  # 不使用docker执行
-                    }
+                    },
+                    llm_config=self.llm_config
                 )
                 logging.info("使用标准UserProxyAgent，启用代码执行")
             except ImportError as e:
                 logging.error(f"无法导入UserProxyAgent: {str(e)}，回退到LLMDrivenUserProxy")
                 self.executor = LLMDrivenUserProxy(
                     name="用户代理", 
-                    human_input_mode="ALWAYS"
+                    human_input_mode="ALWAYS",
+                    llm_config=self.llm_config
                 )
         else:
             # 使用LLMDrivenUserProxy进行自动化对话
             self.executor = LLMDrivenUserProxy(
                 name="用户代理",
-                human_input_mode="ALWAYS"
+                human_input_mode="ALWAYS",
+                llm_config=self.llm_config
             )
             logging.info("使用LLMDrivenUserProxy，自动处理工具调用")
         
@@ -592,7 +595,11 @@ class AG2TwoAgentExecutor:
                     # --- MCP 工具包装器 --- 
                     mcp_tool_instance = tool_info["mcp_tool_ref"]
                     # 使用闭包捕获工具名和 MCPTool 实例
-                    async def mcp_executor_func(captured_tool_name = tool_name, mcp_tool_ref = mcp_tool_instance, **kwargs: Any):
+                    async def mcp_executor_func(
+                        captured_tool_name: Optional[str] = tool_name, 
+                        mcp_tool_ref = mcp_tool_instance,
+                        **kwargs: Any
+                    ):
                         # 尝试处理嵌套参数问题 (AutoGen 有时会把参数包在 'params' 或 'kwargs' 里)
                         actual_params = kwargs
                         if len(kwargs) == 1:
@@ -621,7 +628,10 @@ class AG2TwoAgentExecutor:
                         logging.warning(f"Skipping registration for standard tool {tool_name} due to missing instance.")
                         continue
                     # 使用闭包捕获工具实例
-                    async def standard_executor_func(tool_inst = tool_instance, **kwargs: Any):
+                    async def standard_executor_func(
+                        tool_inst = tool_instance,
+                        **kwargs: Any
+                    ):
                         # 同样处理嵌套参数
                         params_to_pass = kwargs
                         if len(kwargs) == 1:
