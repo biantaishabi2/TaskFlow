@@ -9,6 +9,7 @@ import asyncio
 from datetime import datetime
 import logging
 import warnings
+import anyio
 
 # 抑制Pydantic和Autogen警告
 warnings.filterwarnings("ignore", 
@@ -28,9 +29,9 @@ except ImportError:
     _HAS_AG2 = False
 
 # 定义一个共用函数来处理chat和agent两个子命令
-def handle_ag2_chat(command, args, use_human_input, base_dir):
+async def handle_ag2_chat(command, args, use_human_input, base_dir):
     """
-    处理chat和agent命令的通用函数
+    处理chat和agent命令的通用函数 (异步版本)
     
     Args:
         command: 子命令名称 ('chat' 或 'agent')
@@ -44,6 +45,7 @@ def handle_ag2_chat(command, args, use_human_input, base_dir):
         print("提示: 请尝试在项目根目录执行 'pip install -e ag2-wrapper'")
         return 1
         
+    executor = None # 初始化 executor 变量
     try:
         # 确保能找到AG2模块
         sys.path.insert(0, base_dir)
@@ -63,92 +65,143 @@ def handle_ag2_chat(command, args, use_human_input, base_dir):
         # 打印温度参数
         print(f"使用温度参数: {args.temperature}")
         
-        # 创建AG2执行器实例，根据模式设置use_human_input参数
-        executor = asyncio.run(AG2TwoAgentExecutor.create(
-            config=config, 
-            use_human_input=use_human_input
-        ))
+        # 添加更多配置信息
+        print("开始设置MCP配置...")
+        from ag2_wrapper.agent_tools.MCPTool.config import list_servers
+        available_servers = list_servers()
+        print(f"发现MCP服务器配置: {list(available_servers.keys()) if available_servers else '无'}")
         
-        # 定义助手回复处理函数
-        def process_and_print_response(result):
+        # --- 移除调试块：单独测试 MCP 连接和 list_tools ---
+        # if 'time' in available_servers:
+        #     ...
+        # else:
+        #     ...
+        # --- 调试结束 ---
+
+        # 创建AG2执行器实例，根据模式设置use_human_input参数
+        print("开始创建AG2执行器...")
+        executor = await AG2TwoAgentExecutor.create(
+            config=config,
+            use_human_input=use_human_input
+        )
+        print("AG2执行器创建完成")
+        
+        # 获取 Agent 实例 (假设 executor 结构)
+        user_proxy = executor.executor
+        assistant = executor.assistant
+
+        # 定义助手回复处理函数 (保持同步，因为它只处理结果)
+        def process_and_print_response(chat_result):
             """处理AG2返回结果并打印到控制台"""
-            if not result.get('success', False):
-                print(f"错误: {result.get('error_msg', '未知错误')}")
-                return
+            if not chat_result:
+                 print("(无返回结果)")
+                 return
 
             # 尝试获取最后一条助手消息
-            if 'result' in result and hasattr(result['result'], 'chat_history'):
-                chat_history = result['result'].chat_history
+            if hasattr(chat_result, 'chat_history') and chat_result.chat_history:
                 assistant_message = None
-                
-                # 获取最后一条助手的消息
-                for msg in reversed(chat_history):
-                    name = getattr(msg, 'name', None)
-                    if name in ['助手代理', '任务助手', 'task_assistant', '助手']:
-                        assistant_message = getattr(msg, 'content', None)
-                        if assistant_message:
-                            print("\n" + assistant_message)
-                            break
-                
-                if not assistant_message:
-                    print("(无法获取助手回复)")
+                # 获取最后一条来自助手或其代理的消息
+                last_message = chat_result.chat_history[-1]
+                # 根据角色或名称判断是否是助手的回复
+                # 注意: 可能需要根据实际的Agent名称调整
+                # if last_message.get('role') == 'assistant' or last_message.get('name') in ['助手代理', '任务助手', 'task_assistant', '助手']:
+                if last_message.get('role') != 'user': # 简化：非用户的最后一条消息视为助手回复
+                     content = last_message.get('content')
+                     if isinstance(content, str):
+                         assistant_message = content
+                     elif isinstance(content, list): # 处理 tool_calls 的情况
+                         # 尝试提取文本或调用信息
+                         texts = [item.get('text') for item in content if isinstance(item, dict) and 'text' in item]
+                         calls = [f"调用: {item['function']['name']}({item['function']['arguments']})" for item in content if isinstance(item, dict) and 'function' in item]
+                         if texts:
+                             assistant_message = "\n".join(texts)
+                         elif calls:
+                              assistant_message = "\n".join(calls)
+                         else:
+                             assistant_message = str(content) # 回退到字符串表示
+                     else:
+                         assistant_message = str(content) # 其他类型转为字符串
+
+                if assistant_message:
+                    print("\n" + assistant_message)
+                else:
+                    # 如果最后一条是用户的，可能表示Agent没有回复或者正在等待工具调用
+                    if chat_result.summary:
+                        print(f"\n(对话总结: {chat_result.summary})")
+                    else:
+                        print("(Agent无新回复)")
+            elif hasattr(chat_result, 'summary'):
+                 print(f"(对话总结: {chat_result.summary})")
             else:
-                print("(无法获取对话历史)")
-        
+                print("(无法获取对话历史或总结)")
+
         # 如果提供了初始提示，发送它
         if args.prompt:
             print("\n" + "-" * 40)
             print(f"发送初始提示: {args.prompt}")
             print("-" * 40)
             
-            result = executor.execute(args.prompt)
-            process_and_print_response(result)
+            # 使用异步方法
+            chat_result = await user_proxy.a_initiate_chat(
+                assistant,
+                message=args.prompt,
+                # clear_history=True # 默认 initiate 会清理
+            )
+            process_and_print_response(chat_result)
         
-        # 交互式对话循环
+        # --- 不再需要手动交互循环 --- 
+        # AutoGen 的 UserProxyAgent 在 human_input_mode='ALWAYS' 时会自行处理用户输入
         print("\n" + "=" * 60)
-        print(f"AG2对话模式已启动 ({mode_desc}模式)。输入 'exit' 或 'quit' 退出。")
+        print(f"AG2对话模式已启动 ({mode_desc}模式)。UserProxyAgent 将处理输入。输入 'exit' 或 'quit' 退出对话。")
         print("=" * 60)
+
+        # 如果没有初始提示，也需要启动对话让 UserProxyAgent 等待第一次输入
+        if not args.prompt:
+            # 发起一个空的对话，让 UserProxyAgent 进入等待状态
+            # 注意：这里可能需要根据 UserProxyAgent 的具体行为调整
+            # 尝试直接 initiate chat，它应该会要求输入
+             await user_proxy.a_initiate_chat(
+                 assistant,
+                 message=None # 或者一个默认的开场白？
+             )
+        else:
+             # 如果有初始提示， initiate_chat 已经调用过了，后续由 AutoGen 处理
+             pass
+
+        # --- 手动循环和 a_send 已移除 ---
         
-        while True:
-            try:
-                # 获取用户输入
-                user_input = input("\n>>> ")
-                
-                # 检查是否退出
-                if user_input.lower() in ['exit', 'quit', '退出']:
-                    print("退出对话模式。")
-                    break
-                    
-                if not user_input.strip():
-                    continue
-                    
-                # 发送用户输入到AG2执行器
-                result = executor.execute(user_input)
-                
-                # 处理并打印响应
-                process_and_print_response(result)
-            
-            except KeyboardInterrupt:
-                print("\n收到中断信号，退出对话模式。")
-                break
-            except Exception as e:
-                print(f"发生错误: {str(e)}")
-                logger.error(f"对话执行错误: {str(e)}", exc_info=True)
-                
-        print(f"AG2对话模式 ({mode_desc}) 已关闭。")
+        # 等待 AutoGen 对话自然结束 (用户输入 exit)
+        # 这里不需要额外的代码，a_initiate_chat 会阻塞直到对话结束
+        print(f"\nAG2对话模式 ({mode_desc}) 已结束。")
             
     except ImportError as e:
         print(f"Error: 无法导入必要的模块: {e}")
         return 1
+    except Exception as e: # 添加顶层异常捕获
+         print(f"初始化或执行过程中发生严重错误: {e}")
+         logger.error(f"handle_ag2_chat 失败: {e}", exc_info=True)
+         return 1
+    finally:
+         # 确保 executor 和可能的 MCP 连接被清理
+         if executor and hasattr(executor, 'close') and callable(getattr(executor, 'close')):
+              try:
+                   logger.info("Calling executor.close()...")
+                   await executor.close() # 调用 AG2TwoAgentExecutor 的 close 方法
+                   print("AG2 Executor 资源已清理。")
+              except Exception as close_e:
+                   logger.error(f"调用 executor.close() 时出错: {close_e}", exc_info=True)
+         else:
+            logger.warning("Executor 不存在或没有可调用的 close 方法，跳过显式清理。")
+         # print("资源清理已跳过 (AG2TwoAgentExecutor 需要实现 close 方法)。") # 移除旧的占位符消息
 
-# 配置日志 - 设置较高级别以抑制警告
+# 配置日志 - 临时设置为INFO级别用于调试
 logging.basicConfig(
-    level=logging.ERROR,  # 只显示错误级别及以上的日志
+    level=logging.INFO,  # 显示INFO级别及以上的日志
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
 # 特别设置autogen.oai.client的日志级别
-logging.getLogger("autogen.oai.client").setLevel(logging.ERROR)
+logging.getLogger("autogen.oai.client").setLevel(logging.INFO)
 logger = logging.getLogger('task_planner_cli')
 
 # 这个函数用于动态导入模块
@@ -190,6 +243,13 @@ def main():
   # 运行可视化服务器
   task-planner visualization --port 8080 --api-url http://localhost:5000
 '''
+    )
+    # 添加全局日志级别选项
+    parser.add_argument(
+        '--log-level', 
+        default='ERROR', # <-- 修改默认级别为 ERROR
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+        help='设置日志级别 (默认: ERROR)'
     )
     subparsers = parser.add_subparsers(dest='command', help='要运行的命令')
     
@@ -371,7 +431,24 @@ def main():
     
     args = parser.parse_args()
     
-    # 确保脚本可以找到正确的模块
+    # 设置日志级别
+    log_level = getattr(logging, args.log_level.upper(), logging.ERROR) # <-- 默认使用 ERROR
+    logging.getLogger().setLevel(log_level)
+    # 对特定模块设置更高级别日志，减少干扰 (确保至少为 ERROR)
+    logging.getLogger("autogen.oai.client").setLevel(max(log_level, logging.ERROR))
+    logging.getLogger("autogen.agentchat.agent").setLevel(max(log_level, logging.ERROR))
+    # UserProxyAgent 的 INFO 可能包含输入提示，也设为 ERROR
+    logging.getLogger("autogen.agentchat.user_proxy_agent").setLevel(max(log_level, logging.ERROR)) 
+    # 抑制函数工具警告
+    logging.getLogger("autogen.tools.function_utils").setLevel(logging.ERROR) 
+    # 抑制 MCPClient_SDK 的 INFO 和 WARNING (如果需要更干净的输出)
+    logging.getLogger("MCPClient_SDK").setLevel(logging.ERROR)
+    # 抑制我们自己的 AG2 Wrapper 的 INFO 和 WARNING
+    logging.getLogger("ag2_wrapper").setLevel(max(log_level, logging.ERROR)) 
+    # task_planner 本身的日志级别由全局控制
+    logger.info(f"设置全局日志级别为: {args.log_level.upper()}") # 这条 info 可能不会显示了
+
+    # 获取项目根目录 (上一级目录)
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     
     if args.command == 'api':
@@ -576,14 +653,16 @@ def main():
     
     # 处理chat命令（真人输入模式）
     elif args.command == 'chat':
-        return handle_ag2_chat('chat', args, use_human_input=True, base_dir=base_dir)
+        return asyncio.run(handle_ag2_chat('chat', args, use_human_input=True, base_dir=base_dir))
             
     # 处理agent命令（LLM驱动模式）
     elif args.command == 'agent':
-        return handle_ag2_chat('agent', args, use_human_input=False, base_dir=base_dir)
+        return asyncio.run(handle_ag2_chat('agent', args, use_human_input=False, base_dir=base_dir))
             
     else:
         parser.print_help()
         
+    return 0 # 默认成功退出
+
 if __name__ == '__main__':
     sys.exit(main())

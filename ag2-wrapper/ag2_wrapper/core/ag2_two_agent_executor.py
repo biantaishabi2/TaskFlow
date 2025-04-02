@@ -30,7 +30,7 @@ AG2 Two Agent Executor
    - 传入新的 task_context 值
 """
 
-from autogen import AssistantAgent, register_function
+from autogen import AssistantAgent, register_function, Agent, UserProxyAgent
 from ..chat_modes.llm_driven_agent import LLMDrivenUserProxy
 import os
 import logging
@@ -289,33 +289,32 @@ class AG2TwoAgentExecutor:
         """异步初始化方法"""
         # 根据配置选择不同的用户代理类型
         if self.use_human_input:
-            # 使用标准UserProxyAgent，启用代码执行
+            # --- 恢复使用标准 UserProxyAgent --- 
             try:
-                from autogen import UserProxyAgent
-                
-                # 创建UserProxyAgent，启用代码执行
+                # from autogen import UserProxyAgent # 确保已在顶部导入
+                logger.info("使用标准 UserProxyAgent，启用代码执行")
                 self.executor = UserProxyAgent(
                     name="用户代理",
                     human_input_mode="ALWAYS",
                     code_execution_config={
-                        "work_dir": ".",  # 设置工作目录为当前目录
-                        "use_docker": False  # 不使用docker执行
+                        "work_dir": ".",
+                        "use_docker": False
                     },
                     llm_config=self.llm_config
                 )
-                logging.info("使用标准UserProxyAgent，启用代码执行")
             except ImportError as e:
-                logging.error(f"无法导入UserProxyAgent: {str(e)}，回退到LLMDrivenUserProxy")
+                # 保留回退逻辑以防万一
+                logger.error(f"无法导入UserProxyAgent: {str(e)}，回退到LLMDrivenUserProxy")
                 self.executor = LLMDrivenUserProxy(
                     name="用户代理", 
                     human_input_mode="ALWAYS",
                     llm_config=self.llm_config
                 )
         else:
-            # 使用LLMDrivenUserProxy进行自动化对话
+            # 自动化模式保持不变
             self.executor = LLMDrivenUserProxy(
                 name="用户代理",
-                human_input_mode="ALWAYS",
+                human_input_mode="ALWAYS", # 或者 NEVER?
                 llm_config=self.llm_config
             )
             logging.info("使用LLMDrivenUserProxy，自动处理工具调用")
@@ -334,9 +333,21 @@ class AG2TwoAgentExecutor:
         self.assistant = AssistantAgent(
             name="助手代理",
             system_message=system_prompt,
-            llm_config=self.llm_config
+            llm_config=self.llm_config,
+            human_input_mode="NEVER"  # 明确禁止助手代理请求人类输入
         )
         
+        # --- 立即更新系统消息（使用简单版本进行调试）---
+        simple_system_prompt = "Test system message."
+        logger.warning(f"DEBUG: Attempting simplified system prompt update immediately after assistant creation: '{simple_system_prompt}'")
+        try:
+            self.assistant.update_system_message(simple_system_prompt)
+            logger.info("DEBUG: Immediate system prompt update successful.")
+        except Exception as e_update:
+            logger.error(f"DEBUG: Immediate system prompt update FAILED: {e_update}", exc_info=True)
+            # Re-raise or handle as needed, for now just log and continue to see if later steps fail
+        # --- 调试结束 ---
+
         # --- MCPTool Internal Initialization ---
         logging.info("MCPTool instance not provided externally, attempting internal initialization...")
         try:
@@ -353,35 +364,46 @@ class AG2TwoAgentExecutor:
                 # MCPClient constructor will use list_servers() internally to load configs
                 logging.debug("Creating and initializing internal MCPClient (will load from MCP configs)...")
                 mcp_client = MCPClient()
-                await mcp_client.initialize() # Initialize connections based on loaded configs
-                self.mcp_tool = MCPTool(mcp_client) # Assign to self.mcp_tool
-                logging.info("Internal MCPTool initialized successfully using MCP config system.")
+                
+                # 添加超时机制
+                try:
+                    import asyncio
+                    await asyncio.wait_for(mcp_client.initialize(), timeout=5.0)
+                    self.mcp_tool = MCPTool(mcp_client) # Assign to self.mcp_tool
+                    self.mcp_client = mcp_client # <-- Store the client instance
+                    logging.info("Internal MCPTool initialized successfully using MCP config system.")
+                except asyncio.TimeoutError:
+                    logging.warning("Internal MCPTool initialization timed out after 5 seconds. Continuing without MCP tools.")
+                    self.mcp_tool = None
+                    self.mcp_client = None # <-- Ensure client is None on timeout
                 
             else:
                 logging.warning("Internal MCPTool initialization skipped: No servers found via MCP config system (e.g., in ./.mcp/config.json).")
+                self.mcp_client = None # <-- Ensure client is None if skipped
         
         except ImportError as e_import:
              logging.error(f"Internal MCPTool initialization failed: Could not import MCPTool or MCPClient. {e_import}", exc_info=True)
+             self.mcp_client = None # <-- Ensure client is None on import error
         except Exception as e_init:
              logging.error(f"Internal MCPTool initialization failed: {e_init}", exc_info=True)
+             self.mcp_client = None # <-- Ensure client is None on other init errors
         # --- End MCPTool Internal Initialization ---
 
         # 初始化工具 (Now uses either externally provided or internally initialized self.mcp_tool)
         await self._initialize_tools()
         
-        # 获取已加载的工具列表并更新系统提示词
-        tools = self.tool_loader.load_tools_sync()
+        # --- 最终更新完整系统提示词 (保持不变) --- 
+        logger.info("使用完整信息更新最终系统提示词...")
         updated_system_prompt = DEFAULT_SYSTEM_PROMPT.format(
             SECURITY_WARNINGS=self._build_security_warnings(),
             ENV_INFO=self._build_env_info(),
             CONTEXT_INFO=await self._build_context_info(),
             task_context=self.task_context,  
-            TOOLS_SECTION=self._build_tools_prompt(),
+            TOOLS_SECTION=self._build_tools_prompt(),  # 初始为空，后续更新
             BASH_PROMPT=BASH_PROMPT
         )
-        
-        # 更新助手代理的系统提示词
         self.assistant.update_system_message(updated_system_prompt)
+        logger.info("最终系统提示词更新完成。")
 
     @classmethod
     async def create(cls,
@@ -417,7 +439,8 @@ class AG2TwoAgentExecutor:
             context_parts = []
             for key, value in context.items():
                 if value:
-                    context_parts.append(f"<context name=\"{key}\">\n{value}\n</context>")
+                    value_str = str(value) # <-- 显式转换为字符串
+                    context_parts.append(f"<context name=\"{key}\">\n{value_str}\n</context>") # <-- 使用字符串版本
             
             if not context_parts:
                 return "No additional context available."
@@ -1211,9 +1234,26 @@ class AG2TwoAgentExecutor:
         # 获取 ContextManager 知道的 CWD
         # 使用 self.ag2_context_manager.cwd (在 executor 初始化时设置)
         initial_cwd = self.ag2_context_manager.cwd if hasattr(self, 'ag2_context_manager') and self.ag2_context_manager else os.getcwd()
+        initial_cwd_str = str(initial_cwd) # <-- 显式转换为字符串
         return f"""
         平台：{platform.system()}
         今天日期：{datetime.now().strftime('%Y-%m-%d')}
         模型：{self.llm_config['config_list'][0]['model']}
-        初始工作目录: {initial_cwd}
+        初始工作目录: {initial_cwd_str} # <-- 使用字符串版本
         """
+
+    async def close(self):
+        """Explicitly close resources, primarily the MCPClient connection."""
+        logger.info("Attempting to close AG2TwoAgentExecutor resources...")
+        if hasattr(self, 'mcp_client') and self.mcp_client:
+            logger.info("Found internal MCPClient, attempting to disconnect...")
+            try:
+                await self.mcp_client.disconnect_all()
+                logger.info("Internal MCPClient disconnected successfully.")
+            except Exception as e:
+                logger.error(f"Error while disconnecting internal MCPClient: {e}", exc_info=True)
+        else:
+            logger.info("No internal MCPClient found to disconnect.")
+        
+        # Add any other cleanup needed for AG2 agents if necessary later
+        logger.info("AG2TwoAgentExecutor resource close attempt finished.")
