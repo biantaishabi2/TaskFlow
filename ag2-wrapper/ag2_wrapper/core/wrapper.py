@@ -25,7 +25,7 @@ except ImportError:
         "未找到autogen包。请确保已正确安装:\n"
         "$ pip install ag2[openai]\n"
         "或者\n"
-        "$ pip install pyautogen\n"
+        "$ pip install ag2\n"
     )
 
 # 设置日志
