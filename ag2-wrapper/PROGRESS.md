@@ -27,7 +27,7 @@
 
 ## 遇到的问题
 - 测试 TwoAgentChat 时遇到了环境问题
-- 需要正确激活 conda 环境 'ag2'，以访问 ag2/pyautogen 包
+- 需要正确激活 conda 环境 'ag2'，以访问 ag2/ag2 包
 - OpenRouter API 连接测试已成功
 - 修复了LLM驱动代理的异步/同步问题：
   - 将`generate_reply`和`_process_received_message`方法彻底重写为完全同步版本，避免任何异步调用
@@ -62,4 +62,4 @@ OpenRouter API测试成功完成。
 # 运行LLM驱动代理测试（需要在conda ag2环境中执行）
 cd /home/wangbo/document/wangbo/dev/ag2-wrapper && python tests/test_llm_driven_agent.py
 ```
-注意：需要在conda环境'ag2'中运行，以访问ag2/pyautogen包。环境变量OPENROUTER_API_KEY需要已设置。
+注意：需要在conda环境'ag2'中运行，以访问ag2/ag2包。环境变量OPENROUTER_API_KEY需要已设置。
